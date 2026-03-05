@@ -1,0 +1,22 @@
+# ── Mobile ──────────────────────────────────────────────
+mobile/node_modules/
+mobile/.expo/
+mobile/.env
+mobile/.env.local
+
+# ── Blazor ──────────────────────────────────────────────
+blazor/NoteManager/NoteManager/wwwroot/appsettings.json
+blazor/NoteManager/NoteManager/wwwroot/appsettings.*.json
+blazor/**/bin/
+blazor/**/obj/
+
+# ── General ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.user
+.vs/
+
+# ── Logs ────────────────────────────────────────────────
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

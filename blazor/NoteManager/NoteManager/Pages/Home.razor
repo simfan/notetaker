@@ -1,0 +1,326 @@
+﻿@page "/"
+@inject SupabaseService Svc
+
+<PageTitle>NoteKeeper — Desktop</PageTitle>
+
+<div class="app-shell">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-icon">📋</span>
+            <span class="brand-name">NoteKeeper</span>
+        </div>
+
+        <!-- Groups Nav -->
+        <div class="nav-section">
+            <div class="nav-section-label">Groups</div>
+            <a class="nav-item @(SelectedGroupId == null ? "active" : "")" @onclick='() => SelectGroup(null)'>
+                <span class="nav-icon">🗂️</span> All Notes
+                <span class="nav-badge">@notes.Count</span>
+            </a>
+            @foreach (var g in groups)
+            {
+                <a class="nav-item @(SelectedGroupId == g.Id ? "active" : "")"
+                   @onclick="() => SelectGroup(g.Id)">
+                    <span class="group-dot" style="background:@g.Color"></span>
+                    @g.Name
+                </a>
+            }
+            <button class="nav-add" @onclick="() => showGroupModal = true">+ New Group</button>
+        </div>
+
+        <!-- Tags Nav -->
+        <div class="nav-section">
+            <div class="nav-section-label">Tags</div>
+            @foreach (var t in tags)
+            {
+                <a class="nav-item @(SelectedTagId == t.Id ? "active" : "")"
+                   @onclick="() => SelectTag(t.Id)">
+                    <span class="tag-pill" style="background:@(t.Color)22;color:@t.Color">@t.Name</span>
+                </a>
+            }
+            <button class="nav-add" @onclick="() => showTagModal = true">+ New Tag</button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Top Bar -->
+        <div class="topbar">
+            <div class="search-wrap">
+                <span class="search-icon">🔍</span>
+                <input class="search-input" placeholder="Search notes…"
+                       @bind="SearchQuery" @bind:event="oninput" />
+            </div>
+            <div class="topbar-actions">
+                <BSButton Color="BSColor.Light" Size="Size.Small" @onclick="LoadData">⟳ Refresh</BSButton>
+            </div>
+        </div>
+
+        <!-- Notes Grid -->
+        @if (loading)
+        {
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading notes…</p>
+            </div>
+        }
+        else if (!filteredNotes.Any())
+        {
+            <div class="empty-state">
+                <div class="empty-icon">📝</div>
+                <h3>No notes found</h3>
+                <p>Notes added from the mobile app will appear here.</p>
+            </div>
+        }
+        else
+        {
+            <div class="notes-grid">
+                @foreach (var note in filteredNotes)
+                {
+                    <div class="note-card @(selectedNote?.Id == note.Id ? "selected" : "")"
+                         @onclick="() => SelectNote(note)">
+                        @if (!string.IsNullOrEmpty(note.PhotoUrl))
+                        {
+                            <div class="note-photo-wrap">
+                                <img src="@note.PhotoUrl" class="note-photo" alt="Note photo" />
+                            </div>
+                        }
+                        <div class="note-card-body">
+                            @if (note.Group != null)
+                            {
+                                <div class="note-group-badge" style="color:@note.Group.Color">
+                                    <span class="group-dot" style="background:@note.Group.Color"></span>
+                                    @note.Group.Name
+                                </div>
+                            }
+                            <h3 class="note-title">@note.Title</h3>
+                            @if (!string.IsNullOrEmpty(note.Body))
+                            {
+                                <p class="note-preview">@Truncate(note.Body, 120)</p>
+                            }
+                            <div class="note-tags">
+                                @foreach (var tag in note.Tags)
+                                {
+                                    <span class="tag-badge" style="background:@(tag.Color)22;color:@tag.Color">
+                                        @tag.Name
+                                    </span>
+                                }
+                            </div>
+                            <div class="note-meta">@note.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </main>
+
+    <!-- Detail Panel -->
+    @if (selectedNote != null)
+    {
+        <aside class="detail-panel">
+            <div class="detail-header">
+                <h2 class="detail-title">@selectedNote.Title</h2>
+                <button class="detail-close" @onclick="() => selectedNote = null">✕</button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(selectedNote.PhotoUrl))
+            {
+                <img src="@selectedNote.PhotoUrl" class="detail-photo" alt="Note photo" />
+            }
+
+            <div class="detail-section">
+                <label class="detail-label">Group</label>
+                <select class="detail-select" value="@selectedNote.GroupId"
+                        @onchange="async e => await ChangeGroup(e.Value?.ToString())">
+                    <option value="">— None —</option>
+                    @foreach (var g in groups)
+                    {
+                        <option value="@g.Id">@g.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="detail-section">
+                <label class="detail-label">Tags</label>
+                <div class="detail-tag-list">
+                    @foreach (var tag in tags)
+                    {
+                        var active = selectedNote.Tags.Any(t => t.Id == tag.Id);
+                        <button class="tag-toggle @(active ? "active" : "")"
+                                style="@(active ? $"background:{tag.Color};color:#fff;border-color:{tag.Color}" : $"border-color:{tag.Color};color:{tag.Color}")"
+                                @onclick="() => ToggleTag(tag)">
+                            @tag.Name
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="detail-section">
+                <label class="detail-label">Content</label>
+                <div class="detail-body">@selectedNote.Body</div>
+            </div>
+
+            <div class="detail-footer">
+                <BSButton Color="BSColor.Danger" Size="Size.Small" @onclick="DeleteSelected">
+                    🗑 Delete Note
+                </BSButton>
+                <span class="detail-date">
+                    Updated @selectedNote.UpdatedAt.ToLocalTime().ToString("MMM d, h:mm tt")
+                </span>
+            </div>
+        </aside>
+    }
+</div>
+
+<!-- Group Modal -->
+@if (showGroupModal)
+{
+    <div class="modal-backdrop" @onclick="() => showGroupModal = false">
+        <div class="modal-card" @onclick:stopPropagation>
+            <h3 class="modal-title">New Group</h3>
+            <label class="form-label">Name</label>
+            <input class="form-control mb-3" @bind="newGroupName" placeholder="Group name…" />
+            <label class="form-label">Color</label>
+            <div class="color-palette">
+                @foreach (var c in ColorPalette)
+                {
+                    <button class="color-swatch @(newGroupColor == c ? "selected" : "")"
+                            style="background:@c" @onclick="() => newGroupColor = c"></button>
+                }
+            </div>
+            <div class="modal-actions">
+                <BSButton Color="BSColor.Light" @onclick="() => showGroupModal = false">Cancel</BSButton>
+                <BSButton Color="BSColor.Primary" @onclick="CreateGroup">Create</BSButton>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Tag Modal -->
+@if (showTagModal)
+{
+    <div class="modal-backdrop" @onclick="() => showTagModal = false">
+        <div class="modal-card" @onclick:stopPropagation>
+            <h3 class="modal-title">New Tag</h3>
+            <label class="form-label">Name</label>
+            <input class="form-control mb-3" @bind="newTagName" placeholder="Tag name…" />
+            <label class="form-label">Color</label>
+            <div class="color-palette">
+                @foreach (var c in ColorPalette)
+                {
+                    <button class="color-swatch @(newTagColor == c ? "selected" : "")"
+                            style="background:@c" @onclick="() => newTagColor = c"></button>
+                }
+            </div>
+            <div class="modal-actions">
+                <BSButton Color="BSColor.Light" @onclick="() => showTagModal = false">Cancel</BSButton>
+                <BSButton Color="BSColor.Primary" @onclick="CreateTag">Create</BSButton>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Note> notes = new();
+    private List<Note> filteredNotes = new();
+    private List<Group> groups = new();
+    private List<Tag> tags = new();
+    private Note? selectedNote;
+    private bool loading = true;
+
+    private string? SelectedGroupId;
+    private string? SelectedTagId;
+    private string _searchQuery = "";
+    private string SearchQuery
+    {
+        get => _searchQuery;
+        set { _searchQuery = value; ApplyFilters(); }
+    }
+
+    private bool showGroupModal;
+    private bool showTagModal;
+    private string newGroupName = "";
+    private string newGroupColor = "#6366f1";
+    private string newTagName = "";
+    private string newTagColor = "#10b981";
+
+    private static readonly string[] ColorPalette = {
+        "#6366f1","#10b981","#f59e0b","#ef4444",
+        "#8b5cf6","#06b6d4","#f97316","#ec4899"
+    };
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        loading = true;
+        notes = await Svc.GetNotesAsync();
+        groups = await Svc.GetGroupsAsync();
+        tags = await Svc.GetTagsAsync();
+        ApplyFilters();
+        loading = false;
+    }
+
+    private void ApplyFilters()
+    {
+        filteredNotes = notes
+            .Where(n => string.IsNullOrEmpty(SelectedGroupId) || n.GroupId == SelectedGroupId)
+            .Where(n => string.IsNullOrEmpty(SelectedTagId) || n.Tags.Any(t => t.Id == SelectedTagId))
+            .Where(n => string.IsNullOrEmpty(_searchQuery) ||
+                        n.Title.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                        (n.Body?.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ?? false))
+            .ToList();
+    }
+
+    private void SelectGroup(string? id) { SelectedGroupId = id; SelectedTagId = null; ApplyFilters(); }
+    private void SelectTag(string id) { SelectedTagId = SelectedTagId == id ? null : id; SelectedGroupId = null; ApplyFilters(); }
+    private void SelectNote(Note note) => selectedNote = note;
+
+    private async Task ChangeGroup(string? groupId)
+    {
+        if (selectedNote == null) return;
+        selectedNote.GroupId = string.IsNullOrEmpty(groupId) ? null : groupId;
+        selectedNote.Group = groups.FirstOrDefault(g => g.Id == groupId);
+        await Svc.UpdateNoteAsync(selectedNote);
+        await LoadData();
+    }
+
+    private async Task ToggleTag(Tag tag)
+    {
+        if (selectedNote == null) return;
+        if (selectedNote.Tags.Any(t => t.Id == tag.Id))
+            selectedNote.Tags.RemoveAll(t => t.Id == tag.Id);
+        else
+            selectedNote.Tags.Add(tag);
+        await Svc.SetNoteTagsAsync(selectedNote.Id, selectedNote.Tags.Select(t => t.Id).ToList());
+        await LoadData();
+    }
+
+    private async Task DeleteSelected()
+    {
+        if (selectedNote == null) return;
+        await Svc.DeleteNoteAsync(selectedNote.Id);
+        selectedNote = null;
+        await LoadData();
+    }
+
+    private async Task CreateGroup()
+    {
+        if (string.IsNullOrWhiteSpace(newGroupName)) return;
+        await Svc.CreateGroupAsync(newGroupName.Trim(), newGroupColor);
+        newGroupName = ""; showGroupModal = false;
+        await LoadData();
+    }
+
+    private async Task CreateTag()
+    {
+        if (string.IsNullOrWhiteSpace(newTagName)) return;
+        await Svc.CreateTagAsync(newTagName.Trim(), newTagColor);
+        newTagName = ""; showTagModal = false;
+        await LoadData();
+    }
+
+    private static string Truncate(string s, int len) =>
+        s.Length <= len ? s : s[..len] + "…";
+}
