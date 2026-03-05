@@ -23,9 +23,12 @@ export async function createNote(note: Partial<Note>, tagIds: string[] = []): Pr
   const user = (await supabase.auth.getUser()).data.user;
   const userId = user?.id ?? '00000000-0000-0000-0000-000000000000';
 
+  // Check rules before insert
+  const groupId = await applyRules(tagIds);
+
   const { data, error } = await supabase
     .from('notes')
-    .insert({ ...note, user_id: userId })
+    .insert({ ...note, user_id: userId, group_id: groupId ?? note.group_id ?? null })
     .select()
     .single();
 
@@ -39,6 +42,12 @@ export async function createNote(note: Partial<Note>, tagIds: string[] = []): Pr
 }
 
 export async function updateNote(id: string, updates: Partial<Note>, tagIds?: string[]): Promise<Note> {
+  // If tags are changing, re-evaluate rules
+  if (tagIds !== undefined) {
+    const groupId = await applyRules(tagIds);
+    if (groupId !== null) updates = { ...updates, group_id: groupId };
+  }
+
   const { data, error } = await supabase
     .from('notes')
     .update(updates)
@@ -111,4 +120,20 @@ export async function createTag(name: string, color: string): Promise<Tag> {
 export async function deleteTag(id: string): Promise<void> {
   const { error } = await supabase.from('tags').delete().eq('id', id);
   if (error) throw error;
+}
+
+// ── Tag Group Rules ───────────────────────────────────────
+
+export async function applyRules(tagIds: string[]): Promise<string | null> {
+  if (tagIds.length === 0) return null;
+
+  const { data, error } = await supabase
+    .from('tag_group_rules')
+    .select('group_id, tag_id, priority')
+    .in('tag_id', tagIds)
+    .order('priority', { ascending: true })
+    .limit(1);
+
+  if (error || !data || data.length === 0) return null;
+  return data[0].group_id;
 }

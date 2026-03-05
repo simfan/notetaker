@@ -67,3 +67,13 @@ public class Group
     [JsonPropertyName("created_at")]
     public DateTime CreatedAt { get; set; }
 }
+public class TagGroupRule
+{
+    public string Id { get; set; } = "";
+    public string UserId { get; set; } = "";
+    public string TagId { get; set; } = "";
+    public string GroupId { get; set; } = "";
+    public int Priority { get; set; }
+    public Tag? Tag { get; set; }
+    public Group? Group { get; set; }
+}

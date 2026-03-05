@@ -153,4 +153,60 @@ public class SupabaseService
 
         return note;
     }
+
+    // ── Tag Group Rules ──────────────────────────────────────
+
+    public async Task<List<TagGroupRule>> GetRulesAsync()
+    {
+        var raw = await _http.GetFromJsonAsync<List<JsonElement>>(
+            "/rest/v1/tag_group_rules?select=*,tag:tags(*),group:groups(*)&order=priority.asc") ?? new();
+
+        return raw.Select(r => new TagGroupRule
+        {
+            Id = r.GetProperty("id").GetString() ?? "",
+            UserId = r.GetProperty("user_id").GetString() ?? "",
+            TagId = r.GetProperty("tag_id").GetString() ?? "",
+            GroupId = r.GetProperty("group_id").GetString() ?? "",
+            Priority = r.GetProperty("priority").GetInt32(),
+            Tag = r.TryGetProperty("tag", out var t) && t.ValueKind != JsonValueKind.Null
+                ? JsonSerializer.Deserialize<Tag>(t.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                : null,
+            Group = r.TryGetProperty("group", out var g) && g.ValueKind != JsonValueKind.Null
+                ? JsonSerializer.Deserialize<Group>(g.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                : null,
+        }).ToList();
+    }
+
+    public async Task CreateRuleAsync(string tagId, string groupId, int priority)
+    {
+        var userId = "00000000-0000-0000-0000-000000000000";
+        var payload = new { user_id = userId, tag_id = tagId, group_id = groupId, priority };
+        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var res = await _http.PostAsync("/rest/v1/tag_group_rules", content);
+        res.EnsureSuccessStatusCode();
+    }
+
+    public async Task DeleteRuleAsync(string ruleId)
+    {
+        await _http.DeleteAsync($"/rest/v1/tag_group_rules?id=eq.{ruleId}");
+    }
+
+    public async Task UpdateRulePriorityAsync(string ruleId, int priority)
+    {
+        var payload = new { priority };
+        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        await _http.PatchAsync($"/rest/v1/tag_group_rules?id=eq.{ruleId}", content);
+    }
+
+    /// <summary>
+    /// Given a set of tag IDs on a note, returns the group ID of the first matching rule (by priority).
+    /// Returns null if no rule matches.
+    /// </summary>
+    public async Task<string?> ApplyRulesAsync(List<string> tagIds)
+    {
+        if (tagIds.Count == 0) return null;
+        var rules = await GetRulesAsync();
+        var match = rules.FirstOrDefault(r => tagIds.Contains(r.TagId));
+        return match?.GroupId;
+    }
 }

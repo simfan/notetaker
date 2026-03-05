@@ -1,0 +1,141 @@
+@page "/rules"
+@inject SupabaseService Svc
+
+<PageTitle>Auto-Group Rules</PageTitle>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-icon">📋</span>
+            <span class="brand-name">NoteKeeper</span>
+        </div>
+        <div class="nav-section">
+            <a class="nav-item" href="/">← Back to Notes</a>
+        </div>
+    </aside>
+
+    <main class="main-content" style="padding: 32px; max-width: 680px;">
+        <h2 style="margin-bottom: 4px;">Auto-Group Rules</h2>
+        <p style="color:#64748b; margin-bottom: 28px;">
+            When a note is tagged, it will be automatically assigned to a group based on these rules.
+            Lower priority number = checked first.
+        </p>
+
+        @if (loading)
+        {
+            <p>Loading…</p>
+        }
+        else
+        {
+            <!-- Existing Rules -->
+            @if (rules.Any())
+            {
+                <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:32px;">
+                    @foreach (var rule in rules.OrderBy(r => r.Priority))
+                    {
+                        <div style="display:flex; align-items:center; gap:12px; background:#fff;
+                                    border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px;">
+                            <span style="font-size:13px; font-weight:700; color:#94a3b8; width:28px;">@rule.Priority</span>
+                            <span class="tag-badge"
+                                  style="background:@(rule.Tag?.Color ?? "#ccc")22;color:@(rule.Tag?.Color ?? "#ccc")">
+                                @(rule.Tag?.Name ?? rule.TagId)
+                            </span>
+                            <span style="color:#94a3b8;">→</span>
+                            <span style="display:flex; align-items:center; gap:6px;">
+                                <span class="group-dot" style="background:@(rule.Group?.Color ?? "#ccc")"></span>
+                                @(rule.Group?.Name ?? rule.GroupId)
+                            </span>
+                            <div style="margin-left:auto; display:flex; gap:8px;">
+                                <input type="number" min="0" max="999" value="@rule.Priority"
+                                       style="width:60px; padding:4px 8px; border:1px solid #e2e8f0; border-radius:6px; font-size:13px;"
+                                       @onchange="async e => await UpdatePriority(rule.Id, int.TryParse(e.Value?.ToString(), out var p) ? p : 0)" />
+                                <BSButton Color="BSColor.Danger" Size="Size.Small"
+                                          @onclick="() => DeleteRule(rule.Id)">✕</BSButton>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div style="color:#94a3b8; margin-bottom:32px;">No rules yet. Add one below.</div>
+            }
+
+            <!-- New Rule Form -->
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px; padding:20px;">
+                <h4 style="margin:0 0 16px;">New Rule</h4>
+                <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+                    <div>
+                        <label class="detail-label">If tag…</label>
+                        <select class="detail-select" @bind="newTagId">
+                            <option value="">Select tag</option>
+                            @foreach (var t in tags)
+                            {
+                                <option value="@t.Id">@t.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="detail-label">Assign to group…</label>
+                        <select class="detail-select" @bind="newGroupId">
+                            <option value="">Select group</option>
+                            @foreach (var g in groups)
+                            {
+                                <option value="@g.Id">@g.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="detail-label">Priority</label>
+                        <input type="number" min="0" max="999" @bind="newPriority"
+                               style="width:70px; padding:6px 10px; border:1px solid #e2e8f0;
+                                      border-radius:8px; font-size:14px;" />
+                    </div>
+                    <BSButton Color="BSColor.Primary" @onclick="CreateRule">+ Add Rule</BSButton>
+                </div>
+            </div>
+        }
+    </main>
+</div>
+
+@code {
+    private List<TagGroupRule> rules = new();
+    private List<Tag> tags = new();
+    private List<Group> groups = new();
+    private bool loading = true;
+
+    private string newTagId = "";
+    private string newGroupId = "";
+    private int newPriority = 0;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        loading = true;
+        rules = await Svc.GetRulesAsync();
+        tags = await Svc.GetTagsAsync();
+        groups = await Svc.GetGroupsAsync();
+        loading = false;
+    }
+
+    private async Task CreateRule()
+    {
+        if (string.IsNullOrEmpty(newTagId) || string.IsNullOrEmpty(newGroupId)) return;
+        await Svc.CreateRuleAsync(newTagId, newGroupId, newPriority);
+        newTagId = ""; newGroupId = ""; newPriority = 0;
+        await LoadData();
+    }
+
+    private async Task DeleteRule(string id)
+    {
+        await Svc.DeleteRuleAsync(id);
+        await LoadData();
+    }
+
+    private async Task UpdatePriority(string id, int priority)
+    {
+        await Svc.UpdateRulePriorityAsync(id, priority);
+        await LoadData();
+    }
+}

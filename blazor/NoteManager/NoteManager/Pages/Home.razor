@@ -27,6 +27,9 @@
                 </a>
             }
             <button class="nav-add" @onclick="() => showGroupModal = true">+ New Group</button>
+            <div class="nav-section" style="margin-top: auto; padding-top: 16px; border-top: 1px solid #f1f5f9;">
+    <a class="nav-item" href="/rules">⚡ Auto-Group Rules</a>
+</div>
         </div>
 
         <!-- Tags Nav -->
@@ -287,15 +290,27 @@
     }
 
     private async Task ToggleTag(Tag tag)
+{
+    if (selectedNote == null) return;
+    if (selectedNote.Tags.Any(t => t.Id == tag.Id))
+        selectedNote.Tags.RemoveAll(t => t.Id == tag.Id);
+    else
+        selectedNote.Tags.Add(tag);
+
+    var tagIds = selectedNote.Tags.Select(t => t.Id).ToList();
+    await Svc.SetNoteTagsAsync(selectedNote.Id, tagIds);
+
+    // Auto-assign group based on rules (only if no group manually set, or overwrite — your call)
+    var matchedGroupId = await Svc.ApplyRulesAsync(tagIds);
+    if (matchedGroupId != null && selectedNote.GroupId == null)
     {
-        if (selectedNote == null) return;
-        if (selectedNote.Tags.Any(t => t.Id == tag.Id))
-            selectedNote.Tags.RemoveAll(t => t.Id == tag.Id);
-        else
-            selectedNote.Tags.Add(tag);
-        await Svc.SetNoteTagsAsync(selectedNote.Id, selectedNote.Tags.Select(t => t.Id).ToList());
-        await LoadData();
+        selectedNote.GroupId = matchedGroupId;
+        selectedNote.Group = groups.FirstOrDefault(g => g.Id == matchedGroupId);
+        await Svc.UpdateNoteAsync(selectedNote);
     }
+
+    await LoadData();
+}
 
     private async Task DeleteSelected()
     {
