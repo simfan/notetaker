@@ -609,3 +609,298 @@ html, body {
     justify-content: flex-end;
     gap: 10px;
 }
+/* ============================================================
+   app.css — Phase 2 Additions
+   Append these to the bottom of your existing custom styles.
+   ============================================================ */
+
+/* ?? Link Card ???????????????????????????????????????????? */
+.note-card--link {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    min-height: unset; /* compact */
+}
+
+.link-card-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+}
+
+.link-card-body {
+    flex: 1;
+    min-width: 0; /* allow text truncation */
+}
+
+.link-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.link-card-url {
+    font-size: 12px;
+    color: var(--primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+.link-open-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: var(--primary-light);
+    color: var(--primary);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background .15s;
+}
+
+    .link-open-btn:hover {
+        background: #e0e7ff;
+    }
+
+/* ?? Task / Assignment Card ??????????????????????????????? */
+.note-card--task {
+    border-left: 3px solid var(--primary);
+}
+
+.note-card--complete {
+    border-left-color: #10b981;
+    opacity: 0.75;
+}
+
+.task-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.task-checkbox {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    transition: background .15s, border-color .15s;
+    color: #fff;
+}
+
+    .task-checkbox.checked {
+        background: #10b981;
+        border-color: #10b981;
+    }
+
+.task-checkbox-large {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    transition: background .15s, border-color .15s;
+    color: #fff;
+}
+
+    .task-checkbox-large.checked {
+        background: #10b981;
+        border-color: #10b981;
+    }
+
+.note-title--struck {
+    text-decoration: line-through;
+    color: var(--text-muted);
+}
+
+.task-complete-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.task-complete-label {
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.task-due {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.task-due--overdue {
+    color: #ef4444;
+    font-weight: 600;
+}
+
+.overdue-badge {
+    background: #fef2f2;
+    color: #ef4444;
+    border: 1px solid #fecaca;
+    border-radius: 5px;
+    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* ?? Dev Note Card ???????????????????????????????????????? */
+.note-card--dev {
+    border-top: 3px solid #6366f1;
+}
+
+.dev-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px 0;
+}
+
+.dev-card-lang {
+    font-size: 11px;
+    font-weight: 700;
+    background: #eef2ff;
+    color: #6366f1;
+    border-radius: 5px;
+    padding: 2px 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.dev-card-status {
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 5px;
+    padding: 2px 8px;
+    margin-left: auto;
+}
+
+.dev-status--in-progress {
+    background: #fffbeb;
+    color: #d97706;
+}
+
+.dev-status--review {
+    background: #eff6ff;
+    color: #3b82f6;
+}
+
+.dev-status--done {
+    background: #f0fdf4;
+    color: #16a34a;
+}
+
+.dev-status--blocked {
+    background: #fef2f2;
+    color: #ef4444;
+}
+
+.dev-card-url {
+    font-size: 12px;
+    color: var(--primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 6px;
+}
+
+/* ?? Detail Panel Additions ??????????????????????????????? */
+.detail-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+}
+
+.detail-template-badge {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 9px;
+}
+
+.detail-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--surface);
+    box-sizing: border-box;
+    outline: none;
+    transition: border-color .15s;
+}
+
+    .detail-input:focus {
+        border-color: var(--primary);
+    }
+
+.project-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    background: #f0f9ff;
+    border-bottom: 1px solid #bae6fd;
+    font-size: 14px;
+    color: #0369a1;
+}
+
+.project-banner-delete {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: #ef4444;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+
+    .project-banner-delete:hover {
+        background: #fee2e2;
+    }
+.note-export-btn {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 3px 10px;
+    font-size: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #f8fafc;
+    color: #475569;
+    cursor: pointer;
+}
+
+    .note-export-btn:hover {
+        background: #e2e8f0;
+    }

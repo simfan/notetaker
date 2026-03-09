@@ -1,5 +1,7 @@
 ﻿@page "/"
 @inject SupabaseService Svc
+@inject IJSRuntime JS
+@using System.Text.Json
 
 <PageTitle>NoteKeeper — Desktop</PageTitle>
 
@@ -14,7 +16,7 @@
         <!-- Groups Nav -->
         <div class="nav-section">
             <div class="nav-section-label">Groups</div>
-            <a class="nav-item @(SelectedGroupId == null ? "active" : "")" @onclick='() => SelectGroup(null)'>
+            <a class="nav-item @(SelectedGroupId == null && SelectedTagId == null && SelectedProjectId == null ? "active" : "")" @onclick='() => SelectGroup(null)'>
                 <span class="nav-icon">🗂️</span> All Notes
                 <span class="nav-badge">@notes.Count</span>
             </a>
@@ -27,9 +29,9 @@
                 </a>
             }
             <button class="nav-add" @onclick="() => showGroupModal = true">+ New Group</button>
-            <div class="nav-section" style="margin-top: auto; padding-top: 16px; border-top: 1px solid #f1f5f9;">
-    <a class="nav-item" href="/rules">⚡ Auto-Group Rules</a>
-</div>
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9;">
+                <a class="nav-item" href="/rules">⚡ Auto-Group Rules</a>
+            </div>
         </div>
 
         <!-- Tags Nav -->
@@ -44,6 +46,27 @@
             }
             <button class="nav-add" @onclick="() => showTagModal = true">+ New Tag</button>
         </div>
+
+        <!-- Projects Nav -->
+        <div class="nav-section">
+            <div class="nav-section-label">Projects</div>
+            @foreach (var proj in projects)
+            {
+                <a class="nav-item @(SelectedProjectId == proj.Id ? "active" : "")"
+                   @onclick="() => SelectProject(proj.Id)">
+                    <span class="nav-icon">📁</span>
+                    <span style="flex:1">@proj.Name</span>
+                    @if (proj.Tag != null)
+                    {
+                        <span class="tag-pill" style="background:@(proj.Tag.Color)22;color:@proj.Tag.Color;font-size:11px;">
+                            @proj.Tag.Name
+                        </span>
+                    }
+                </a>
+            }
+            <button class="nav-add" @onclick="() => showProjectModal = true">+ New Project</button>
+        </div>
+
     </aside>
 
     <!-- Main Content -->
@@ -59,6 +82,33 @@
                 <BSButton Color="BSColor.Light" Size="Size.Small" @onclick="LoadData">⟳ Refresh</BSButton>
             </div>
         </div>
+
+        <!-- Active project banner -->
+        @if (SelectedProjectId != null)
+        {
+            var activeProject = projects.FirstOrDefault(p => p.Id == SelectedProjectId);
+            if (activeProject != null)
+            {
+                <div class="project-banner">
+    <span>📁 <strong>@activeProject.Name</strong></span>
+    @if (activeProject.Tag != null)
+    {
+        <span class="tag-pill" style="background:@(activeProject.Tag.Color)22;color:@activeProject.Tag.Color">
+            #@activeProject.Tag.Name
+        </span>
+    }
+    <span style="color:#64748b;font-size:13px;">@filteredNotes.Count note@(filteredNotes.Count == 1 ? "" : "s")</span>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+        <BSButton Color="BSColor.Primary" Size="Size.Small" @onclick="() => ExportAllNotes(activeProject)">
+            ⬇ Export All
+        </BSButton>
+        <button class="project-banner-delete" @onclick="() => DeleteProject(activeProject.Id)">
+            🗑 Delete Project
+        </button>
+    </div>
+</div>
+            }
+        }
 
         <!-- Notes Grid -->
         @if (loading)
@@ -81,57 +131,264 @@
             <div class="notes-grid">
                 @foreach (var note in filteredNotes)
                 {
-                    <div class="note-card @(selectedNote?.Id == note.Id ? "selected" : "")"
-                         @onclick="() => SelectNote(note)">
-                        @if (!string.IsNullOrEmpty(note.PhotoUrl))
-                        {
-                            <div class="note-photo-wrap">
-                                <img src="@note.PhotoUrl" class="note-photo" alt="Note photo" />
-                            </div>
-                        }
-                        <div class="note-card-body">
-                            @if (note.Group != null)
-                            {
-                                <div class="note-group-badge" style="color:@note.Group.Color">
-                                    <span class="group-dot" style="background:@note.Group.Color"></span>
-                                    @note.Group.Name
-                                </div>
-                            }
-                            <h3 class="note-title">@note.Title</h3>
-                            @if (!string.IsNullOrEmpty(note.Body))
-                            {
-                                <p class="note-preview">@Truncate(note.Body, 120)</p>
-                            }
-                            <div class="note-tags">
-                                @foreach (var tag in note.Tags)
+                    var templateType = note.Group?.TemplateType ?? GroupTemplateType.Standard;
+
+                    @* ── Link card (compact) ── *@
+                    @if (templateType == GroupTemplateType.Link)
+                    {
+                        <div class="note-card note-card--link @(selectedNote?.Id == note.Id ? "selected" : "")"
+                             @onclick="() => SelectNote(note)">
+                            <div class="link-card-icon">🔗</div>
+                            <div class="link-card-body">
+                                <div class="link-card-title">@note.Title</div>
+                                @if (!string.IsNullOrEmpty(note.Metadata.Url))
                                 {
-                                    <span class="tag-badge" style="background:@(tag.Color)22;color:@tag.Color">
-                                        @tag.Name
+                                    <div class="link-card-url">@note.Metadata.Url</div>
+                                }
+                                <div class="note-meta" style="margin-top:6px;">
+                                    @note.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @* ── Task / Assignment card ── *@
+                    else if (templateType == GroupTemplateType.Task || templateType == GroupTemplateType.Assignment)
+                    {
+                        <div class="note-card note-card--task @(selectedNote?.Id == note.Id ? "selected" : "")
+                                        @(note.Metadata.IsComplete == true ? "note-card--complete" : "")"
+                             @onclick="() => SelectNote(note)">
+                            <div class="note-card-body">
+                                <div class="task-card-header">
+                                    <button class="task-checkbox @(note.Metadata.IsComplete == true ? "checked" : "")"
+                                            @onclick:stopPropagation
+                                            @onclick="() => ToggleComplete(note)">
+                                        @if (note.Metadata.IsComplete == true) { <span>✓</span> }
+                                    </button>
+                                    <h3 class="note-title @(note.Metadata.IsComplete == true ? "note-title--struck" : "")">
+                                        @note.Title
+                                    </h3>
+                                </div>
+                                @if (templateType == GroupTemplateType.Assignment && !string.IsNullOrEmpty(note.Metadata.DueDate))
+                                {
+                                    var due = DateTime.TryParse(note.Metadata.DueDate, out var d) ? d : (DateTime?)null;
+                                    var overdue = due.HasValue && due.Value.Date < DateTime.Today && note.Metadata.IsComplete != true;
+                                    <div class="task-due @(overdue ? "task-due--overdue" : "")">
+                                        📅 @(due.HasValue ? due.Value.ToString("MMM d, yyyy") : note.Metadata.DueDate)
+                                        @if (overdue) { <span class="overdue-badge">Overdue</span> }
+                                    </div>
+                                }
+                                @if (!string.IsNullOrEmpty(note.Body))
+                                {
+                                    <p class="note-preview">@Truncate(note.Body, 80)</p>
+                                }
+                                <div class="note-tags">
+                                    @foreach (var tag in note.Tags)
+                                    {
+                                        <span class="tag-badge" style="background:@(tag.Color)22;color:@tag.Color">@tag.Name</span>
+                                    }
+                                </div>
+                                <div class="note-meta">@note.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
+                            </div>
+                        </div>
+                    }
+
+                    @* ── Dev Note card ── *@
+                    else if (templateType == GroupTemplateType.DevNote)
+                    {
+                        <div class="note-card note-card--dev @(selectedNote?.Id == note.Id ? "selected" : "")"
+                             @onclick="() => SelectNote(note)">
+                            <div class="dev-card-header">
+                                <span class="dev-card-lang">@(note.Metadata.Language ?? "—")</span>
+                                @if (!string.IsNullOrEmpty(note.Metadata.Status))
+                                {
+                                    <span class="dev-card-status dev-status--@note.Metadata.Status.ToLower().Replace(" ", "-")">
+                                        @note.Metadata.Status
                                     </span>
                                 }
                             </div>
-                            <div class="note-meta">@note.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
+                            <div class="note-card-body">
+                                <h3 class="note-title">@note.Title</h3>
+                                @if (!string.IsNullOrEmpty(note.Metadata.Url))
+                                {
+                                    <div class="dev-card-url">🔗 @note.Metadata.Url</div>
+                                }
+                                @if (!string.IsNullOrEmpty(note.Body))
+                                {
+                                    <p class="note-preview">@Truncate(note.Body, 80)</p>
+                                }
+                                <div class="note-tags">
+                                    @foreach (var tag in note.Tags)
+                                    {
+                                        <span class="tag-badge" style="background:@(tag.Color)22;color:@tag.Color">@tag.Name</span>
+                                    }
+                                </div>
+                                <div class="note-meta">@note.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
+                            </div>
                         </div>
-                    </div>
+                    }
+
+                    @* ── Standard card (default) ── *@
+                    else
+                    {
+                        <div class="note-card @(selectedNote?.Id == note.Id ? "selected" : "")"
+                             @onclick="() => SelectNote(note)">
+                            @if (!string.IsNullOrEmpty(note.PhotoUrl))
+                            {
+                                <div class="note-photo-wrap">
+                                    <img src="@note.PhotoUrl" class="note-photo" alt="Note photo" />
+                                </div>
+                            }
+                            <div class="note-card-body">
+                                @if (note.Group != null)
+                                {
+                                    <div class="note-group-badge" style="color:@note.Group.Color">
+                                        <span class="group-dot" style="background:@note.Group.Color"></span>
+                                        @note.Group.Name
+                                    </div>
+                                }
+                                <h3 class="note-title">@note.Title</h3>
+                                @if (!string.IsNullOrEmpty(note.Body))
+                                {
+                                    <p class="note-preview">@Truncate(note.Body, 120)</p>
+                                }
+                                <div class="note-tags">
+                                    @foreach (var tag in note.Tags)
+                                    {
+                                        <span class="tag-badge" style="background:@(tag.Color)22;color:@tag.Color">@tag.Name</span>
+                                    }
+                                </div>
+                                @if (SelectedProjectId != null)
+                                {
+                                    <button class="note-export-btn" @onclick:stopPropagation
+                                            @onclick="() => ExportNote(note)">
+                                        ⬇ Export
+                                    </button>
+                                }
+                                <div class="note-meta">@note.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
+                            </div>
+                        </div>
+                    }
                 }
             </div>
         }
+
     </main>
 
     <!-- Detail Panel -->
     @if (selectedNote != null)
     {
+        var detailTemplate = selectedNote.Group?.TemplateType ?? GroupTemplateType.Standard;
+
         <aside class="detail-panel">
             <div class="detail-header">
-                <h2 class="detail-title">@selectedNote.Title</h2>
+                <div class="detail-header-left">
+                    @if (selectedNote.Group != null)
+                    {
+                        <span class="detail-template-badge">
+                            @selectedNote.Group.TemplateIcon @selectedNote.Group.Name
+                        </span>
+                    }
+                </div>
                 <button class="detail-close" @onclick="() => selectedNote = null">✕</button>
             </div>
 
-            @if (!string.IsNullOrEmpty(selectedNote.PhotoUrl))
+            @* Photo (standard only) *@
+            @if (detailTemplate == GroupTemplateType.Standard && !string.IsNullOrEmpty(selectedNote.PhotoUrl))
             {
                 <img src="@selectedNote.PhotoUrl" class="detail-photo" alt="Note photo" />
             }
 
+            @* Title *@
+            <div class="detail-section">
+                <label class="detail-label">Title</label>
+                <input class="detail-input" @bind="selectedNote.Title"
+                       @bind:event="oninput" placeholder="Note title…" />
+            </div>
+
+            @* ── Template-specific fields ── *@
+
+            @if (detailTemplate == GroupTemplateType.Task || detailTemplate == GroupTemplateType.Assignment)
+            {
+                <div class="detail-section">
+                    <label class="detail-label">Status</label>
+                    <div class="task-complete-row">
+                        <button class="task-checkbox-large @(selectedNote.Metadata.IsComplete == true ? "checked" : "")"
+                                @onclick="() => ToggleComplete(selectedNote)">
+                            @if (selectedNote.Metadata.IsComplete == true) { <span>✓</span> }
+                        </button>
+                        <span class="task-complete-label">
+                            @(selectedNote.Metadata.IsComplete == true ? "Complete" : "Incomplete")
+                        </span>
+                    </div>
+                </div>
+            }
+
+            @if (detailTemplate == GroupTemplateType.Assignment)
+            {
+                <div class="detail-section">
+                    <label class="detail-label">Due Date</label>
+                    <input type="date" class="detail-input"
+                           value="@selectedNote.Metadata.DueDate"
+                           @onchange="async e => { var v = e.Value?.ToString(); await UpdateMetadataField(MetaField.DueDate, v); }" />
+                </div>
+            }
+
+            @if (detailTemplate == GroupTemplateType.DevNote)
+            {
+                <div class="detail-section">
+                    <label class="detail-label">URL</label>
+                    <input class="detail-input" placeholder="https://…"
+                           value="@selectedNote.Metadata.Url"
+                           @onchange="async e => { var v = e.Value?.ToString(); await UpdateMetadataField(MetaField.Url, v); }" />
+                </div>
+                <div class="detail-section">
+                    <label class="detail-label">Language / Tech</label>
+                    <input class="detail-input" placeholder="e.g. C#, TypeScript, SQL…"
+                           value="@selectedNote.Metadata.Language"
+                           @onchange="async e => { var v = e.Value?.ToString(); await UpdateMetadataField(MetaField.Language, v); }" />
+                </div>
+                <div class="detail-section">
+                    <label class="detail-label">Status</label>
+                    <select class="detail-select"
+                            @onchange="async e => { var v = e.Value?.ToString(); await UpdateMetadataField(MetaField.Status, v); }">
+                        <option value="" selected="@(string.IsNullOrEmpty(selectedNote.Metadata.Status))">— None —</option>
+                        <option value="In Progress" selected="@(selectedNote.Metadata.Status == "In Progress")">In Progress</option>
+                        <option value="Review" selected="@(selectedNote.Metadata.Status == "Review")">Review</option>
+                        <option value="Done" selected="@(selectedNote.Metadata.Status == "Done")">Done</option>
+                        <option value="Blocked" selected="@(selectedNote.Metadata.Status == "Blocked")">Blocked</option>
+                    </select>
+                </div>
+            }
+
+            @if (detailTemplate == GroupTemplateType.Link)
+            {
+                <div class="detail-section">
+                    <label class="detail-label">URL</label>
+                    <input class="detail-input" placeholder="https://…"
+                           value="@selectedNote.Metadata.Url"
+                           @onchange="async e => { var v = e.Value?.ToString(); await UpdateMetadataField(MetaField.Url, v); }" />
+                </div>
+                @if (!string.IsNullOrEmpty(selectedNote.Metadata.Url))
+                {
+                    <div class="detail-section">
+                        <a class="link-open-btn" href="@selectedNote.Metadata.Url" target="_blank">
+                            ↗ Open Link
+                        </a>
+                    </div>
+                }
+            }
+
+            @* Body (not shown for Link cards) *@
+            @if (detailTemplate != GroupTemplateType.Link)
+            {
+                <div class="detail-section">
+                    <label class="detail-label">Content</label>
+                    <div class="detail-body">@selectedNote.Body</div>
+                </div>
+            }
+
+            @* Group selector *@
             <div class="detail-section">
                 <label class="detail-label">Group</label>
                 <select class="detail-select" value="@selectedNote.GroupId"
@@ -139,11 +396,12 @@
                     <option value="">— None —</option>
                     @foreach (var g in groups)
                     {
-                        <option value="@g.Id">@g.Name</option>
+                        <option value="@g.Id">@g.TemplateIcon @g.Name</option>
                     }
                 </select>
             </div>
 
+            @* Tags *@
             <div class="detail-section">
                 <label class="detail-label">Tags</label>
                 <div class="detail-tag-list">
@@ -151,7 +409,8 @@
                     {
                         var active = selectedNote.Tags.Any(t => t.Id == tag.Id);
                         <button class="tag-toggle @(active ? "active" : "")"
-                                style="@(active ? $"background:{tag.Color};color:#fff;border-color:{tag.Color}" : $"border-color:{tag.Color};color:{tag.Color}")"
+                                style="@(active ? $"background:{tag.Color};color:#fff;border-color:{tag.Color}"
+                                                : $"border-color:{tag.Color};color:{tag.Color}")"
                                 @onclick="() => ToggleTag(tag)">
                             @tag.Name
                         </button>
@@ -159,21 +418,20 @@
                 </div>
             </div>
 
-            <div class="detail-section">
-                <label class="detail-label">Content</label>
-                <div class="detail-body">@selectedNote.Body</div>
-            </div>
-
             <div class="detail-footer">
                 <BSButton Color="BSColor.Danger" Size="Size.Small" @onclick="DeleteSelected">
-                    🗑 Delete Note
+                    🗑 Delete
+                </BSButton>
+                <BSButton Color="BSColor.Primary" Size="Size.Small" @onclick="SaveNote">
+                    💾 Save
                 </BSButton>
                 <span class="detail-date">
-                    Updated @selectedNote.UpdatedAt.ToLocalTime().ToString("MMM d, h:mm tt")
+                    @selectedNote.UpdatedAt.ToLocalTime().ToString("MMM d, h:mm tt")
                 </span>
             </div>
         </aside>
     }
+
 </div>
 
 <!-- Group Modal -->
@@ -184,7 +442,19 @@
             <h3 class="modal-title">New Group</h3>
             <label class="form-label">Name</label>
             <input class="form-control mb-3" @bind="newGroupName" placeholder="Group name…" />
-            <label class="form-label">Color</label>
+            <label class="form-label">Template Type</label>
+            <div class="template-type-grid">
+                @foreach (var t in TemplateOptions)
+                {
+                    <button class="template-type-btn @(newGroupTemplate == t.Value ? "selected" : "")"
+                            @onclick="() => newGroupTemplate = t.Value">
+                        <span class="template-type-icon">@t.Icon</span>
+                        <span class="template-type-label">@t.Label</span>
+                        <span class="template-type-desc">@t.Desc</span>
+                    </button>
+                }
+            </div>
+            <label class="form-label" style="margin-top:16px;">Color</label>
             <div class="color-palette">
                 @foreach (var c in ColorPalette)
                 {
@@ -224,16 +494,46 @@
     </div>
 }
 
+<!-- Project Modal -->
+@if (showProjectModal)
+{
+    <div class="modal-backdrop" @onclick="() => showProjectModal = false">
+        <div class="modal-card" @onclick:stopPropagation>
+            <h3 class="modal-title">New Project</h3>
+            <label class="form-label">Name</label>
+            <input class="form-control mb-3" @bind="newProjectName" placeholder="Project name…" />
+            <label class="form-label">Linked Tag</label>
+            <select class="form-select mb-3" @bind="newProjectTagId">
+                <option value="">— No tag —</option>
+                @foreach (var t in tags)
+                {
+                    <option value="@t.Id">@t.Name</option>
+                }
+            </select>
+            <p style="font-size:12px;color:#94a3b8;margin-top:-8px;">
+                Notes tagged with this tag will appear in the project view.
+            </p>
+            <div class="modal-actions">
+                <BSButton Color="BSColor.Light" @onclick="() => showProjectModal = false">Cancel</BSButton>
+                <BSButton Color="BSColor.Primary" @onclick="CreateProject">Create</BSButton>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<Note> notes = new();
     private List<Note> filteredNotes = new();
     private List<Group> groups = new();
     private List<Tag> tags = new();
+    private List<Project> projects = new();
     private Note? selectedNote;
     private bool loading = true;
 
     private string? SelectedGroupId;
     private string? SelectedTagId;
+    private string? SelectedProjectId;
+
     private string _searchQuery = "";
     private string SearchQuery
     {
@@ -243,15 +543,33 @@
 
     private bool showGroupModal;
     private bool showTagModal;
+    private bool showProjectModal;
+
     private string newGroupName = "";
     private string newGroupColor = "#6366f1";
     private string newTagName = "";
     private string newTagColor = "#10b981";
+    private string newProjectName = "";
+    private string newProjectTagId = "";
+
+    private string newGroupTemplate = "standard";
 
     private static readonly string[] ColorPalette = {
         "#6366f1","#10b981","#f59e0b","#ef4444",
         "#8b5cf6","#06b6d4","#f97316","#ec4899"
     };
+
+    private record TemplateOption(string Value, string Icon, string Label, string Desc);
+    private static readonly TemplateOption[] TemplateOptions =
+    {
+        new("standard",   "📄", "Standard",   "Title + body"),
+        new("task",       "☑️", "Task",        "Checkbox + status"),
+        new("assignment", "📅", "Assignment",  "Task + due date"),
+        new("dev_note",   "💻", "Dev Note",    "URL, language, status"),
+        new("link",       "🔗", "Link",        "Compact URL card"),
+    };
+
+    private enum MetaField { Url, Language, Status, DueDate }
 
     protected override async Task OnInitializedAsync() => await LoadData();
 
@@ -261,23 +579,60 @@
         notes = await Svc.GetNotesAsync();
         groups = await Svc.GetGroupsAsync();
         tags = await Svc.GetTagsAsync();
+        projects = await Svc.GetProjectsAsync();
         ApplyFilters();
         loading = false;
     }
 
     private void ApplyFilters()
     {
-        filteredNotes = notes
-            .Where(n => string.IsNullOrEmpty(SelectedGroupId) || n.GroupId == SelectedGroupId)
-            .Where(n => string.IsNullOrEmpty(SelectedTagId) || n.Tags.Any(t => t.Id == SelectedTagId))
-            .Where(n => string.IsNullOrEmpty(_searchQuery) ||
-                        n.Title.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                        (n.Body?.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ?? false))
-            .ToList();
+        var query = notes.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(SelectedGroupId))
+            query = query.Where(n => n.GroupId == SelectedGroupId);
+
+        if (!string.IsNullOrEmpty(SelectedTagId))
+            query = query.Where(n => n.Tags.Any(t => t.Id == SelectedTagId));
+
+        if (!string.IsNullOrEmpty(SelectedProjectId))
+        {
+            var proj = projects.FirstOrDefault(p => p.Id == SelectedProjectId);
+            if (proj?.TagId != null)
+                query = query.Where(n => n.Tags.Any(t => t.Id == proj.TagId));
+        }
+
+        if (!string.IsNullOrEmpty(_searchQuery))
+            query = query.Where(n =>
+                n.Title.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                (n.Body?.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ?? false));
+
+        filteredNotes = query.ToList();
     }
 
-    private void SelectGroup(string? id) { SelectedGroupId = id; SelectedTagId = null; ApplyFilters(); }
-    private void SelectTag(string id) { SelectedTagId = SelectedTagId == id ? null : id; SelectedGroupId = null; ApplyFilters(); }
+    private void SelectGroup(string? id)
+    {
+        SelectedGroupId = id;
+        SelectedTagId = null;
+        SelectedProjectId = null;
+        ApplyFilters();
+    }
+
+    private void SelectTag(string id)
+    {
+        SelectedTagId = SelectedTagId == id ? null : id;
+        SelectedGroupId = null;
+        SelectedProjectId = null;
+        ApplyFilters();
+    }
+
+    private void SelectProject(string id)
+    {
+        SelectedProjectId = SelectedProjectId == id ? null : id;
+        SelectedGroupId = null;
+        SelectedTagId = null;
+        ApplyFilters();
+    }
+
     private void SelectNote(Note note) => selectedNote = note;
 
     private async Task ChangeGroup(string? groupId)
@@ -290,27 +645,26 @@
     }
 
     private async Task ToggleTag(Tag tag)
-{
-    if (selectedNote == null) return;
-    if (selectedNote.Tags.Any(t => t.Id == tag.Id))
-        selectedNote.Tags.RemoveAll(t => t.Id == tag.Id);
-    else
-        selectedNote.Tags.Add(tag);
-
-    var tagIds = selectedNote.Tags.Select(t => t.Id).ToList();
-    await Svc.SetNoteTagsAsync(selectedNote.Id, tagIds);
-
-    // Auto-assign group based on rules (only if no group manually set, or overwrite — your call)
-    var matchedGroupId = await Svc.ApplyRulesAsync(tagIds);
-    if (matchedGroupId != null && selectedNote.GroupId == null)
     {
-        selectedNote.GroupId = matchedGroupId;
-        selectedNote.Group = groups.FirstOrDefault(g => g.Id == matchedGroupId);
-        await Svc.UpdateNoteAsync(selectedNote);
-    }
+        if (selectedNote == null) return;
+        if (selectedNote.Tags.Any(t => t.Id == tag.Id))
+            selectedNote.Tags.RemoveAll(t => t.Id == tag.Id);
+        else
+            selectedNote.Tags.Add(tag);
 
-    await LoadData();
-}
+        var tagIds = selectedNote.Tags.Select(t => t.Id).ToList();
+        await Svc.SetNoteTagsAsync(selectedNote.Id, tagIds);
+
+        var matchedGroupId = await Svc.ApplyRulesAsync(tagIds);
+        if (matchedGroupId != null && selectedNote.GroupId == null)
+        {
+            selectedNote.GroupId = matchedGroupId;
+            selectedNote.Group = groups.FirstOrDefault(g => g.Id == matchedGroupId);
+            await Svc.UpdateNoteAsync(selectedNote);
+        }
+
+        await LoadData();
+    }
 
     private async Task DeleteSelected()
     {
@@ -323,8 +677,11 @@
     private async Task CreateGroup()
     {
         if (string.IsNullOrWhiteSpace(newGroupName)) return;
-        await Svc.CreateGroupAsync(newGroupName.Trim(), newGroupColor);
-        newGroupName = ""; showGroupModal = false;
+        await Svc.CreateGroupAsync(newGroupName, newGroupColor, newGroupTemplate);
+        newGroupName = "";
+        newGroupColor = "#6366f1";
+        newGroupTemplate = "standard";
+        showGroupModal = false;
         await LoadData();
     }
 
@@ -336,6 +693,106 @@
         await LoadData();
     }
 
+    private async Task CreateProject()
+    {
+        if (string.IsNullOrWhiteSpace(newProjectName)) return;
+        await Svc.CreateProjectAsync(newProjectName.Trim(), string.IsNullOrEmpty(newProjectTagId) ? null : newProjectTagId);
+        newProjectName = "";
+        newProjectTagId = "";
+        showProjectModal = false;
+        await LoadData();
+    }
+
+    private async Task DeleteProject(string projectId)
+    {
+        await Svc.DeleteProjectAsync(projectId);
+        SelectedProjectId = null;
+        await LoadData();
+    }
+
+    private async Task ExportNote(Note note)
+    {
+        var export = new
+        {
+            id = note.Id,
+            title = note.Title,
+            body = note.Body,
+            tags = note.Tags.Select(t => t.Name).ToList(),
+            group = note.Group?.Name,
+            metadata = note.Metadata,
+            photo_url = note.PhotoUrl,
+            created_at = note.CreatedAt,
+            updated_at = note.UpdatedAt
+        };
+
+        var json = JsonSerializer.Serialize(export, new JsonSerializerOptions { WriteIndented = true });
+        var filename = string.Concat(note.Title
+            .ToLower()
+            .Replace(" ", "-")
+            .Where(c => char.IsLetterOrDigit(c) || c == '-')) + ".json";
+
+        await JS.InvokeVoidAsync("downloadFile", filename, json);
+    }
+
+    private async Task ExportAllNotes(Project project)
+    {
+        var export = new
+        {
+            project = project.Name,
+            exported_at = DateTime.UtcNow,
+            notes = filteredNotes.Select(note => new
+            {
+                id = note.Id,
+                title = note.Title,
+                body = note.Body,
+                tags = note.Tags.Select(t => t.Name).ToList(),
+                group = note.Group?.Name,
+                metadata = note.Metadata,
+                photo_url = note.PhotoUrl,
+                created_at = note.CreatedAt,
+                updated_at = note.UpdatedAt
+            }).ToList()
+        };
+
+        var json = JsonSerializer.Serialize(export, new JsonSerializerOptions { WriteIndented = true });
+        var filename = string.Concat(project.Name
+            .ToLower()
+            .Replace(" ", "-")
+            .Where(c => char.IsLetterOrDigit(c) || c == '-')) + "-export.json";
+
+        await JS.InvokeVoidAsync("downloadFile", filename, json);
+    }
+
     private static string Truncate(string s, int len) =>
         s.Length <= len ? s : s[..len] + "…";
+
+    private async Task ToggleComplete(Note note)
+    {
+        note.Metadata.IsComplete = !(note.Metadata.IsComplete ?? false);
+        note.InvalidateMetadataCache();
+        await Svc.UpdateNoteMetadataAsync(note.Id, note.Metadata);
+        await LoadData();
+    }
+
+    private async Task SaveNote()
+    {
+        if (selectedNote == null) return;
+        await Svc.UpdateNoteAsync(selectedNote);
+        await LoadData();
+    }
+
+    private async Task UpdateMetadataField(MetaField field, string? value)
+    {
+        if (selectedNote == null) return;
+        switch (field)
+        {
+            case MetaField.Url: selectedNote.Metadata.Url = value; break;
+            case MetaField.Language: selectedNote.Metadata.Language = value; break;
+            case MetaField.Status: selectedNote.Metadata.Status = value; break;
+            case MetaField.DueDate: selectedNote.Metadata.DueDate = value; break;
+        }
+        selectedNote.InvalidateMetadataCache();
+        await Svc.UpdateNoteMetadataAsync(selectedNote.Id, selectedNote.Metadata);
+        await LoadData();
+    }
 }

@@ -42,15 +42,21 @@ public class SupabaseService
         return notes;
     }
 
-    public async Task<Note> UpdateNoteAsync(Note note)
+    public async Task UpdateNoteAsync(Note note)
     {
-        var payload = new { title = note.Title, body = note.Body, group_id = note.GroupId };
+        var metadataJson = JsonSerializer.SerializeToElement(note.Metadata);
+        var payload = new
+        {
+            title = note.Title,
+            body = note.Body,
+            group_id = note.GroupId,
+            photo_url = note.PhotoUrl,
+            note_metadata = metadataJson,
+            updated_at = DateTime.UtcNow
+        };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var req = new HttpRequestMessage(HttpMethod.Patch, $"/rest/v1/notes?id=eq.{note.Id}") { Content = content };
-        req.Headers.Add("Prefer", "return=representation");
-        var res = await _http.SendAsync(req);
+        var res = await _http.PatchAsync($"/rest/v1/notes?id=eq.{note.Id}", content);
         res.EnsureSuccessStatusCode();
-        return note;
     }
 
     public async Task DeleteNoteAsync(string id)
@@ -74,16 +80,13 @@ public class SupabaseService
     public async Task<List<Group>> GetGroupsAsync()
         => await _http.GetFromJsonAsync<List<Group>>("/rest/v1/groups?select=*&order=name") ?? new();
 
-    public async Task<Group> CreateGroupAsync(string name, string color)
+    public async Task CreateGroupAsync(string name, string color, string templateType = "standard")
     {
-        var payload = new { name, color, user_id = "00000000-0000-0000-0000-000000000000" };
+        var userId = "00000000-0000-0000-0000-000000000000";
+        var payload = new { user_id = userId, name, color, template_type = templateType };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var req = new HttpRequestMessage(HttpMethod.Post, "/rest/v1/groups") { Content = content };
-        req.Headers.Add("Prefer", "return=representation");
-        var res = await _http.SendAsync(req);
+        var res = await _http.PostAsync("/rest/v1/groups", content);
         res.EnsureSuccessStatusCode();
-        var list = await res.Content.ReadFromJsonAsync<List<Group>>();
-        return list!.First();
     }
 
     public async Task DeleteGroupAsync(string id)
@@ -132,8 +135,18 @@ public class SupabaseService
                 Id = grpEl.GetProperty("id").GetString() ?? "",
                 Name = grpEl.GetProperty("name").GetString() ?? "",
                 Color = grpEl.GetProperty("color").GetString() ?? "#6366f1",
+                TemplateTypeRaw = grpEl.TryGetProperty("template_type", out var tt) && tt.ValueKind != JsonValueKind.Null
+                                    ? tt.GetString() ?? "standard"
+                                    : "standard",
             };
         }
+
+
+
+
+
+
+
 
         if (el.TryGetProperty("note_tags", out var ntArr) && ntArr.ValueKind == JsonValueKind.Array)
         {
@@ -208,5 +221,60 @@ public class SupabaseService
         var rules = await GetRulesAsync();
         var match = rules.FirstOrDefault(r => tagIds.Contains(r.TagId));
         return match?.GroupId;
+    }
+
+    public async Task UpdateNoteMetadataAsync(string noteId, NoteMetadata metadata)
+    {
+        var payload = new
+        {
+            note_metadata = JsonSerializer.SerializeToElement(metadata),
+            updated_at = DateTime.UtcNow
+        };
+        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var res = await _http.PatchAsync($"/rest/v1/notes?id=eq.{noteId}", content);
+        res.EnsureSuccessStatusCode();
+    }
+
+    // ── Projects CRUD ────────────────────────────────────────────
+
+    public async Task<List<Project>> GetProjectsAsync()
+    {
+        var raw = await _http.GetFromJsonAsync<List<JsonElement>>(
+            "/rest/v1/projects?select=*,tag:tags(*)&order=name.asc") ?? new();
+
+        return raw.Select(r => new Project
+        {
+            Id = r.GetProperty("id").GetString() ?? "",
+            UserId = r.GetProperty("user_id").GetString() ?? "",
+            Name = r.GetProperty("name").GetString() ?? "",
+            TagId = r.TryGetProperty("tag_id", out var tid) && tid.ValueKind != JsonValueKind.Null
+                            ? tid.GetString() : null,
+            CreatedAt = r.GetProperty("created_at").GetDateTime(),
+            Tag = r.TryGetProperty("tag", out var t) && t.ValueKind != JsonValueKind.Null
+                            ? JsonSerializer.Deserialize<Tag>(t.GetRawText(),
+                                  new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                            : null
+        }).ToList();
+    }
+
+    public async Task CreateProjectAsync(string name, string? tagId)
+    {
+        var userId = "00000000-0000-0000-0000-000000000000";
+        var payload = new { user_id = userId, name, tag_id = tagId };
+        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var res = await _http.PostAsync("/rest/v1/projects", content);
+        res.EnsureSuccessStatusCode();
+    }
+
+    public async Task DeleteProjectAsync(string projectId)
+    {
+        await _http.DeleteAsync($"/rest/v1/projects?id=eq.{projectId}");
+    }
+
+    public async Task<Note?> GetNoteByIdAsync(string id)
+    {
+        var url = $"/rest/v1/notes?select=*,group:groups(*),note_tags(tag:tags(*))&id=eq.{id}&limit=1";
+        var raw = await _http.GetFromJsonAsync<List<JsonElement>>(url) ?? new();
+        return raw.Count > 0 ? MapNote(raw[0]) : null;
     }
 }
