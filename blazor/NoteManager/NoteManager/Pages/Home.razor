@@ -6,6 +6,12 @@
 <PageTitle>NoteKeeper — Desktop</PageTitle>
 
 <div class="app-shell">
+    @if (_showToast)
+    {
+        <div class="realtime-toast">
+            <span>📡 @_toastMessage</span>
+        </div>
+    }
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="sidebar-brand">
@@ -136,7 +142,7 @@
                     @* ── Link card (compact) ── *@
                     @if (templateType == GroupTemplateType.Link)
                     {
-                        <div class="note-card note-card--link @(selectedNote?.Id == note.Id ? "selected" : "")"
+                        <div class="note-card note-card--link @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "")"
                              @onclick="() => SelectNote(note)">
                             <div class="link-card-icon">🔗</div>
                             <div class="link-card-body">
@@ -155,7 +161,7 @@
                     @* ── Task / Assignment card ── *@
                     else if (templateType == GroupTemplateType.Task || templateType == GroupTemplateType.Assignment)
                     {
-                        <div class="note-card note-card--task @(selectedNote?.Id == note.Id ? "selected" : "")
+                        <div class="note-card note-card--task @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "")"
                                         @(note.Metadata.IsComplete == true ? "note-card--complete" : "")"
                              @onclick="() => SelectNote(note)">
                             <div class="note-card-body">
@@ -196,7 +202,7 @@
                     @* ── Dev Note card ── *@
                     else if (templateType == GroupTemplateType.DevNote)
                     {
-                        <div class="note-card note-card--dev @(selectedNote?.Id == note.Id ? "selected" : "")"
+                        <div class="note-card note-card--dev @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "")"
                              @onclick="() => SelectNote(note)">
                             <div class="dev-card-header">
                                 <span class="dev-card-lang">@(note.Metadata.Language ?? "—")</span>
@@ -231,7 +237,7 @@
                     @* ── Standard card (default) ── *@
                     else
                     {
-                        <div class="note-card @(selectedNote?.Id == note.Id ? "selected" : "")"
+                        <div class="note-card @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "")"
                              @onclick="() => SelectNote(note)">
                             @if (!string.IsNullOrEmpty(note.PhotoUrl))
                             {
@@ -571,8 +577,35 @@
 
     private enum MetaField { Url, Language, Status, DueDate }
 
-    protected override async Task OnInitializedAsync() => await LoadData();
+    private HashSet<string> _highlightedNoteIds = new();
+    private string? _toastMessage;
+    private bool _showToast;
+    private System.Threading.Timer? _toastTimer;
+    private System.Threading.Timer? _highlightTimer;
+    private CancellationTokenSource _pollingCts = new();
 
+    //private Supabase.Realtime.RealtimeChannel? _notesChannel;
+
+    //protected override async Task OnInitializedAsync() => await LoadData();
+    /*protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        try
+        {
+            await SupabaseClient.InitializeAsync();
+            await SubscribeToNotes();
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine($"Realtime subscription failed: {ex.Message}");
+
+        }
+    }*/
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        _ = StartPollingAsync();
+    }
     private async Task LoadData()
     {
         loading = true;
@@ -582,6 +615,112 @@
         projects = await Svc.GetProjectsAsync();
         ApplyFilters();
         loading = false;
+    }
+    private async Task StartPollingAsync()
+    {
+        while (!_pollingCts.IsCancellationRequested)
+        {
+            await Task.Delay(30000, _pollingCts.Token).ContinueWith(_ => Task.CompletedTask);
+            if (_pollingCts.IsCancellationRequested) break;
+
+            var fresh = await Svc.GetNotesAsync();
+            var newNotes = fresh.Where(f => notes.All(n => n.Id != f.Id)).ToList();
+
+            foreach (var note in newNotes)
+            {
+                notes.Insert(0, note);
+                _highlightedNoteIds.Add(note.Id);
+                ShowToast($"New note arrived: \"{note.Title}\"");
+                _ = Task.Delay(4000).ContinueWith(_ =>
+                {
+                    _highlightedNoteIds.Remove(note.Id);
+                    InvokeAsync(StateHasChanged);
+                });
+            }
+
+            // Also update any changed notes silently
+            foreach (var fresh_note in fresh)
+            {
+                var idx = notes.FindIndex(n => n.Id == fresh_note.Id);
+                if (idx >= 0) notes[idx] = fresh_note;
+            }
+
+            // Remove deleted notes
+            notes.RemoveAll(n => fresh.All(f => f.Id != n.Id));
+
+            if (newNotes.Any())
+                ApplyFilters();
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+   /* private async Task SubscribeToNotes()
+    {
+        _notesChannel = SupabaseClient.Realtime.Channel("notes-changes");
+        _notesChannel.Register(new PostgresChangesOptions("public", "notes", ListenType.All));
+
+        _notesChannel.AddPostgresChangeHandler(ListenType.All, async (sender, change) =>
+        {
+            var isDelete = change.Event == Constants.EventType.Delete;
+            var rawRecord = isDelete ? change.Payload?.Data?.OldRecord : change.Payload?.Data?.Record;
+            var id = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, object>>(
+                      rawRecord?.ToString() ?? "{}")
+                      ?.GetValueOrDefault("id")?.ToString();
+
+            if (string.IsNullOrEmpty(id)) return;
+
+            switch (change.Event)
+            {
+                case Constants.EventType.Insert:
+                    {
+                        var newNote = await Svc.GetNoteByIdAsync(id);
+                        if (newNote == null) break;
+                        notes.Insert(0, newNote);
+                        ApplyFilters();
+                        _highlightedNoteIds.Add(newNote.Id);
+                        ShowToast($"New note arrived: \"{newNote.Title}\"");
+                        _highlightTimer = new System.Threading.Timer(_ =>
+                    {
+                        _highlightedNoteIds.Remove(newNote.Id);
+                        InvokeAsync(StateHasChanged);
+                    }, null, 4000, System.Threading.Timeout.Infinite);
+                        break;
+                    }
+                case Constants.EventType.Update:
+                    {
+                        var updated = await Svc.GetNoteByIdAsync(id);
+                        if (updated == null) break;
+                        var idx = notes.FindIndex(n => n.Id == updated.Id);
+                        if (idx >= 0) notes[idx] = updated;
+                        if (selectedNote?.Id == updated.Id) selectedNote = updated;
+                        ApplyFilters();
+                        break;
+                    }
+                case Constants.EventType.Delete:
+                    {
+                        notes.RemoveAll(n => n.Id == id);
+                        if (selectedNote?.Id == id) selectedNote = null;
+                        ApplyFilters();
+                        break;
+                    }
+            }
+
+            await InvokeAsync(StateHasChanged);
+        });
+
+        await _notesChannel.Subscribe();
+    }*/
+
+    private void ShowToast(string message)
+    {
+        _toastMessage = message;
+        _showToast = true;
+        _toastTimer?.Dispose();
+        _toastTimer = new System.Threading.Timer(_ =>
+        {
+            _showToast = false;
+            InvokeAsync(StateHasChanged);
+        }, null, 3500, System.Threading.Timeout.Infinite);
     }
 
     private void ApplyFilters()
@@ -794,5 +933,20 @@
         selectedNote.InvalidateMetadataCache();
         await Svc.UpdateNoteMetadataAsync(selectedNote.Id, selectedNote.Metadata);
         await LoadData();
+    }
+
+    /*public async ValueTask DisposeAsync()
+    {
+        _toastTimer?.Dispose();
+        _highlightTimer?.Dispose();
+        _notesChannel?.Unsubscribe();
+        await Task.CompletedTask;
+    }*/
+    public async ValueTask DisposeAsync()
+    {
+        _toastTimer?.Dispose();
+        _pollingCts.Cancel();
+        _pollingCts.Dispose();
+        await Task.CompletedTask;
     }
 }
