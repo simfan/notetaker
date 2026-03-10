@@ -940,3 +940,69 @@ html, body {
         transform: translateY(0);
     }
 }
+/* Share toggle button in sidebar */
+.share-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    margin-left: auto;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+}
+
+    .share-toggle:hover {
+        opacity: 1;
+    }
+
+.share-on {
+    opacity: 1;
+}
+
+/* Endpoint info banner */
+.endpoint-banner {
+    margin: 12px 8px 0;
+    padding: 10px 12px;
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: 8px;
+    font-size: 12px;
+    color: #166534;
+}
+
+.endpoint-label {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.endpoint-url {
+    display: block;
+    background: #dcfce7;
+    padding: 4px 6px;
+    border-radius: 4px;
+    margin: 4px 0;
+    word-break: break-all;
+    font-size: 11px;
+}
+
+.endpoint-body-hint {
+    margin-top: 4px;
+    color: #15803d;
+}
+
+.copy-btn {
+    margin-top: 8px;
+    padding: 3px 10px;
+    font-size: 11px;
+    border: 1px solid #86efac;
+    border-radius: 5px;
+    background: white;
+    color: #166534;
+    cursor: pointer;
+}
+
+    .copy-btn:hover {
+        background: #dcfce7;
+    }

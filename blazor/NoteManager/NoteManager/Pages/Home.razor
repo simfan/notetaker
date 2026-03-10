@@ -32,7 +32,25 @@
                    @onclick="() => SelectGroup(g.Id)">
                     <span class="group-dot" style="background:@g.Color"></span>
                     @g.Name
+                    <button class="share-toggle @(g.IsPublic ? "share-on" : "share-off")"
+                            title="@(g.IsPublic ? "Public — click to make private" : "Private — click to make public")"
+                            @onclick="() => ToggleGroupPublic(g)"
+                            @onclick:stopPropagation="true">
+                        @(g.IsPublic ? "🌐" : "🔒")
+                    </button>
                 </a>
+                @if (g.IsPublic == true)
+                {
+                    var endpointUrl = $"{Svc.PublicEndpointBase}";
+                    var curlExample = $"curl -X POST \"{endpointUrl}\" \\\n  -H \"apikey: <your-anon-key>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{{\"group_id\":\"{SelectedGroupId}\"}}'";
+
+                    <div class="endpoint-banner">
+                        <div class="endpoint-label">🌐 Public endpoint</div>
+                        <code class="endpoint-url">POST /rpc/get_public_group_notes</code>
+                        <div class="endpoint-body-hint">Body: <code>{"{"}"group_id": "@g.Id"{"}"}</code></div>
+                        <button class="copy-btn" @onclick="() => CopyEndpoint(curlExample)">Copy curl</button>
+                    </div>
+                }
             }
             <button class="nav-add" @onclick="() => showGroupModal = true">+ New Group</button>
             <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9;">
@@ -985,6 +1003,19 @@
             __builder.CloseElement();
         }
     };
+
+    private async Task ToggleGroupPublic(Group group)
+    {
+        group.IsPublic = !group.IsPublic;
+        await Svc.SetGroupPublicAsync(group.Id, group.IsPublic);
+        // No full reload needed — we already mutated the local object
+        StateHasChanged();
+    }
+
+    private async Task CopyEndpoint(string text)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+    }
 
     public async ValueTask DisposeAsync()
     {

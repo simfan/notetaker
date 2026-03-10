@@ -156,6 +156,8 @@ public class Group
     [JsonPropertyName("color")]
     public string Color { get; set; } = "#6366f1";
 
+    [JsonPropertyName("is_public")]
+    public bool IsPublic { get; set; } = false;
     [JsonPropertyName("template_type")]
     public string TemplateTypeRaw { get; set; } = "standard";
 

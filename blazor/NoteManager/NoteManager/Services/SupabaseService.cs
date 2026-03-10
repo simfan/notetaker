@@ -5,18 +5,22 @@ using NoteManager.Models;
 
 namespace NoteManager.Services;
 
+
 public class SupabaseService
 {
     private readonly HttpClient _http;
     private readonly IConfiguration _config;
+    private readonly string _supabaseUrl;
     public SupabaseService(HttpClient http, IConfiguration config)
     {
         _http = http;
         _config = config;
-        var SupabaseUrl = _config.GetSection("Supabase").GetValue<string>("Url");
+        _supabaseUrl = _config.GetSection("Supabase").GetValue<string>("Url");
         var AnonKey = _config.GetSection("Supabase").GetValue<string>("AnonKey");
+        //var SupabaseUrl = _config.GetSection("Supabase").GetValue<string>("Url");
+       // var AnonKey = _config.GetSection("Supabase").GetValue<string>("AnonKey");
 
-        _http.BaseAddress = new Uri(SupabaseUrl);
+        _http.BaseAddress = new Uri(_supabaseUrl);
         _http.DefaultRequestHeaders.Add("apikey", AnonKey);
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {AnonKey}");
     }
@@ -276,5 +280,17 @@ public class SupabaseService
         var url = $"/rest/v1/notes?select=*,group:groups(*),note_tags(tag:tags(*))&id=eq.{id}&limit=1";
         var raw = await _http.GetFromJsonAsync<List<JsonElement>>(url) ?? new();
         return raw.Count > 0 ? MapNote(raw[0]) : null;
+    }
+
+    // ── Public Sharing ───────────────────────────────────────
+    public string PublicEndpointBase => _supabaseUrl + "/rest/v1/rpc/get_public_group_notes";
+    public async Task SetGroupPublicAsync(string groupId, bool isPublic)
+    {
+        var payload = new { is_public = isPublic };
+        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var req = new HttpRequestMessage(HttpMethod.Patch, $"/rest/v1/groups?id=eq.{groupId}") { Content = content };
+        req.Headers.Add("Prefer", "return=minimal");
+        var res = await _http.SendAsync(req);
+        res.EnsureSuccessStatusCode();
     }
 }
