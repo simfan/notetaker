@@ -6,9 +6,7 @@ import {
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Note, Tag } from '../types';
-import { fetchNotes, deleteNote } from '../services/notesService';
-
-const TAG_COLORS: Record<string, string> = {};
+import { fetchNotes, deleteNote, updateNote } from '../services/notesService';
 
 export default function NoteListScreen() {
   const navigation = useNavigation<any>();
@@ -58,31 +56,114 @@ export default function NoteListScreen() {
     ]);
   };
 
-  const renderNote = ({ item }: { item: Note }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => navigation.navigate('NoteEditor', { noteId: item.id })}
-      onLongPress={() => handleDelete(item.id)}
-    >
-      {item.photo_url && (
-        <Image source={{ uri: item.photo_url }} style={styles.cardPhoto} />
-      )}
-      <View style={styles.cardBody}>
-        <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
-        {item.body ? <Text style={styles.cardPreview} numberOfLines={2}>{item.body}</Text> : null}
-        <View style={styles.tagRow}>
-          {(item.tags ?? []).map(tag => (
-            <View key={tag.id} style={[styles.tag, { backgroundColor: tag.color + '33' }]}>
-              <Text style={[styles.tagText, { color: tag.color }]}>{tag.name}</Text>
+  const handleToggleComplete = async (note: Note) => {
+    const current = note.note_metadata?.is_complete ?? false;
+    const updatedMetadata = { ...note.note_metadata, is_complete: !current };
+    // Optimistically update local state
+    setNotes(prev =>
+      prev.map(n => n.id === note.id ? { ...n, note_metadata: updatedMetadata } : n)
+    );
+    try {
+      await updateNote(note.id, { note_metadata: updatedMetadata });
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+      load(); // revert on failure
+    }
+  };
+
+  const isOverdue = (dueDateStr: string | null | undefined): boolean => {
+    if (!dueDateStr) return false;
+    const due = new Date(dueDateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return due < today;
+  };
+
+  const formatDueDate = (dueDateStr: string): string => {
+    return new Date(dueDateStr).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    });
+  };
+
+  const renderNote = ({ item }: { item: Note }) => {
+    const isTask = item.note_type === 'task' || item.note_type === 'assignment';
+    const isAssignment = item.note_type === 'assignment';
+    const isComplete = item.note_metadata?.is_complete ?? false;
+    const dueDate = item.note_metadata?.due_date;
+    const overdue = isAssignment && isOverdue(dueDate) && !isComplete;
+
+    return (
+      <TouchableOpacity
+        style={[styles.card, isComplete && styles.cardComplete]}
+        onPress={() => navigation.navigate('NoteEditor', { noteId: item.id })}
+        onLongPress={() => handleDelete(item.id)}
+      >
+        {item.photo_url && (
+          <Image source={{ uri: item.photo_url }} style={styles.cardPhoto} />
+        )}
+
+        <View style={styles.cardBody}>
+          {/* Title row — with checkbox for tasks/assignments */}
+          <View style={styles.titleRow}>
+            {isTask && (
+              <TouchableOpacity
+                onPress={() => handleToggleComplete(item)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={styles.checkbox}
+              >
+                <Ionicons
+                  name={isComplete ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={22}
+                  color={isComplete ? '#10b981' : '#94a3b8'}
+                />
+              </TouchableOpacity>
+            )}
+            <Text
+              style={[styles.cardTitle, isComplete && styles.cardTitleComplete]}
+              numberOfLines={1}
+            >
+              {item.title}
+            </Text>
+          </View>
+
+          {item.body ? (
+            <Text
+              style={[styles.cardPreview, isComplete && styles.cardPreviewComplete]}
+              numberOfLines={2}
+            >
+              {item.body}
+            </Text>
+          ) : null}
+
+          {/* Due date row — assignments only */}
+          {isAssignment && dueDate && (
+            <View style={styles.dueDateRow}>
+              <Ionicons
+                name="calendar-outline"
+                size={13}
+                color={overdue ? '#ef4444' : '#94a3b8'}
+              />
+              <Text style={[styles.dueDateText, overdue && styles.dueDateOverdue]}>
+                {overdue ? 'Overdue · ' : ''}{formatDueDate(dueDate)}
+              </Text>
             </View>
-          ))}
+          )}
+
+          <View style={styles.tagRow}>
+            {(item.tags ?? []).map(tag => (
+              <View key={tag.id} style={[styles.tag, { backgroundColor: tag.color + '33' }]}>
+                <Text style={[styles.tagText, { color: tag.color }]}>{tag.name}</Text>
+              </View>
+            ))}
+          </View>
+
+          <Text style={styles.cardDate}>
+            {new Date(item.updated_at).toLocaleDateString()}
+          </Text>
         </View>
-        <Text style={styles.cardDate}>
-          {new Date(item.updated_at).toLocaleDateString()}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -185,19 +266,41 @@ const styles = StyleSheet.create({
     backgroundColor: '#f1f5f9', marginRight: 8,
   },
   filterChipText: { fontSize: 13, fontWeight: '500', color: '#475569' },
+
+  // Cards
   card: {
     backgroundColor: '#fff', borderRadius: 16, marginBottom: 12,
     overflow: 'hidden',
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
+  cardComplete: {
+    opacity: 0.6,
+  },
   cardPhoto: { width: '100%', height: 160, resizeMode: 'cover' },
   cardBody: { padding: 14 },
-  cardTitle: { fontSize: 16, fontWeight: '600', color: '#1e293b', marginBottom: 4 },
+
+  titleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4,
+  },
+  checkbox: { marginTop: 1 },
+  cardTitle: { flex: 1, fontSize: 16, fontWeight: '600', color: '#1e293b' },
+  cardTitleComplete: {
+    textDecorationLine: 'line-through', color: '#94a3b8',
+  },
   cardPreview: { fontSize: 14, color: '#64748b', lineHeight: 20, marginBottom: 8 },
+  cardPreviewComplete: { color: '#94a3b8' },
+
+  dueDateRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8,
+  },
+  dueDateText: { fontSize: 12, color: '#94a3b8', fontWeight: '500' },
+  dueDateOverdue: { color: '#ef4444', fontWeight: '600' },
+
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
   tag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   tagText: { fontSize: 11, fontWeight: '600' },
   cardDate: { fontSize: 11, color: '#94a3b8' },
+
   empty: { alignItems: 'center', paddingTop: 80 },
   emptyText: { color: '#94a3b8', marginTop: 12, fontSize: 16 },
   fab: {

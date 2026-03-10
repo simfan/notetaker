@@ -51,6 +51,7 @@ public class SupabaseService
             body = note.Body,
             group_id = note.GroupId,
             photo_url = note.PhotoUrl,
+            note_type = note.NoteTypeRaw,
             note_metadata = metadataJson,
             updated_at = DateTime.UtcNow
         };
@@ -124,9 +125,15 @@ public class SupabaseService
             Body = el.TryGetProperty("body", out var b) ? b.GetString() : null,
             PhotoUrl = el.TryGetProperty("photo_url", out var p) ? p.GetString() : null,
             GroupId = el.TryGetProperty("group_id", out var g) && g.ValueKind != JsonValueKind.Null ? g.GetString() : null,
+            NoteTypeRaw = el.TryGetProperty("note_type", out var nt) && nt.ValueKind != JsonValueKind.Null
+                            ? nt.GetString() ?? "note"
+                            : "note",
             CreatedAt = el.GetProperty("created_at").GetDateTime(),
             UpdatedAt = el.GetProperty("updated_at").GetDateTime(),
         };
+
+        if (el.TryGetProperty("note_metadata", out var metaEl) && metaEl.ValueKind == JsonValueKind.Object)
+            note.NoteMetadataRaw = metaEl;
 
         if (el.TryGetProperty("group", out var grpEl) && grpEl.ValueKind == JsonValueKind.Object)
         {
@@ -141,18 +148,11 @@ public class SupabaseService
             };
         }
 
-
-
-
-
-
-
-
         if (el.TryGetProperty("note_tags", out var ntArr) && ntArr.ValueKind == JsonValueKind.Array)
         {
-            foreach (var nt in ntArr.EnumerateArray())
+            foreach (var nt2 in ntArr.EnumerateArray())
             {
-                if (nt.TryGetProperty("tag", out var t) && t.ValueKind == JsonValueKind.Object)
+                if (nt2.TryGetProperty("tag", out var t) && t.ValueKind == JsonValueKind.Object)
                 {
                     note.Tags.Add(new Tag
                     {
@@ -200,9 +200,7 @@ public class SupabaseService
     }
 
     public async Task DeleteRuleAsync(string ruleId)
-    {
-        await _http.DeleteAsync($"/rest/v1/tag_group_rules?id=eq.{ruleId}");
-    }
+        => await _http.DeleteAsync($"/rest/v1/tag_group_rules?id=eq.{ruleId}");
 
     public async Task UpdateRulePriorityAsync(string ruleId, int priority)
     {
@@ -211,10 +209,6 @@ public class SupabaseService
         await _http.PatchAsync($"/rest/v1/tag_group_rules?id=eq.{ruleId}", content);
     }
 
-    /// <summary>
-    /// Given a set of tag IDs on a note, returns the group ID of the first matching rule (by priority).
-    /// Returns null if no rule matches.
-    /// </summary>
     public async Task<string?> ApplyRulesAsync(List<string> tagIds)
     {
         if (tagIds.Count == 0) return null;
@@ -230,6 +224,14 @@ public class SupabaseService
             note_metadata = JsonSerializer.SerializeToElement(metadata),
             updated_at = DateTime.UtcNow
         };
+        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var res = await _http.PatchAsync($"/rest/v1/notes?id=eq.{noteId}", content);
+        res.EnsureSuccessStatusCode();
+    }
+
+    public async Task UpdateNoteTypeAsync(string noteId, string noteType)
+    {
+        var payload = new { note_type = noteType, updated_at = DateTime.UtcNow };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var res = await _http.PatchAsync($"/rest/v1/notes?id=eq.{noteId}", content);
         res.EnsureSuccessStatusCode();
@@ -267,9 +269,7 @@ public class SupabaseService
     }
 
     public async Task DeleteProjectAsync(string projectId)
-    {
-        await _http.DeleteAsync($"/rest/v1/projects?id=eq.{projectId}");
-    }
+        => await _http.DeleteAsync($"/rest/v1/projects?id=eq.{projectId}");
 
     public async Task<Note?> GetNoteByIdAsync(string id)
     {

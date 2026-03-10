@@ -3,6 +3,14 @@ using System.Text.Json.Serialization;
 
 namespace NoteManager.Models;
 
+// ── Note Type Enum ───────────────────────────────────────────
+public enum NoteType
+{
+    Note,
+    Task,
+    Assignment
+}
+
 // ── Template Type Enum ───────────────────────────────────────
 public enum GroupTemplateType
 {
@@ -57,6 +65,9 @@ public class Note
     [JsonPropertyName("photo_url")]
     public string? PhotoUrl { get; set; }
 
+    [JsonPropertyName("note_type")]
+    public string NoteTypeRaw { get; set; } = "note";
+
     [JsonPropertyName("note_metadata")]
     public JsonElement NoteMetadataRaw { get; set; }
 
@@ -68,6 +79,21 @@ public class Note
 
     public Group? Group { get; set; }
     public List<Tag> Tags { get; set; } = new();
+
+    // Parsed convenience property
+    public NoteType NoteType => NoteTypeRaw switch
+    {
+        "task" => NoteType.Task,
+        "assignment" => NoteType.Assignment,
+        _ => NoteType.Note
+    };
+
+    public string NoteTypeIcon => NoteType switch
+    {
+        NoteType.Task => "☑️",
+        NoteType.Assignment => "📅",
+        _ => "📄"
+    };
 
     // Convenience accessor — deserializes NoteMetadataRaw on demand
     private NoteMetadata? _metadata;

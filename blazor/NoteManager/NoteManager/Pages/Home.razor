@@ -96,23 +96,23 @@
             if (activeProject != null)
             {
                 <div class="project-banner">
-    <span>📁 <strong>@activeProject.Name</strong></span>
-    @if (activeProject.Tag != null)
-    {
-        <span class="tag-pill" style="background:@(activeProject.Tag.Color)22;color:@activeProject.Tag.Color">
-            #@activeProject.Tag.Name
-        </span>
-    }
-    <span style="color:#64748b;font-size:13px;">@filteredNotes.Count note@(filteredNotes.Count == 1 ? "" : "s")</span>
-    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-        <BSButton Color="BSColor.Primary" Size="Size.Small" @onclick="() => ExportAllNotes(activeProject)">
-            ⬇ Export All
-        </BSButton>
-        <button class="project-banner-delete" @onclick="() => DeleteProject(activeProject.Id)">
-            🗑 Delete Project
-        </button>
-    </div>
-</div>
+                    <span>📁 <strong>@activeProject.Name</strong></span>
+                    @if (activeProject.Tag != null)
+                    {
+                        <span class="tag-pill" style="background:@(activeProject.Tag.Color)22;color:@activeProject.Tag.Color">
+                            #@activeProject.Tag.Name
+                        </span>
+                    }
+                    <span style="color:#64748b;font-size:13px;">@filteredNotes.Count note@(filteredNotes.Count == 1 ? "" : "s")</span>
+                    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+                        <BSButton Color="BSColor.Primary" Size="Size.Small" @onclick="() => ExportAllNotes(activeProject)">
+                            ⬇ Export All
+                        </BSButton>
+                        <button class="project-banner-delete" @onclick="() => DeleteProject(activeProject.Id)">
+                            🗑 Delete Project
+                        </button>
+                    </div>
+                </div>
             }
         }
 
@@ -138,18 +138,34 @@
                 @foreach (var note in filteredNotes)
                 {
                     var templateType = note.Group?.TemplateType ?? GroupTemplateType.Standard;
+                    var isTaskOrAssignment = note.NoteType == NoteType.Task || note.NoteType == NoteType.Assignment;
+                    var isComplete = note.Metadata.IsComplete == true;
 
                     @* ── Link card (compact) ── *@
                     @if (templateType == GroupTemplateType.Link)
                     {
-                        <div class="note-card note-card--link @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "")"
+                        <div class="note-card note-card--link @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "") @(isComplete ? "note-card--complete" : "")"
                              @onclick="() => SelectNote(note)">
                             <div class="link-card-icon">🔗</div>
                             <div class="link-card-body">
-                                <div class="link-card-title">@note.Title</div>
+                                <div class="task-card-header">
+                                    @if (isTaskOrAssignment)
+                                    {
+                                        <button class="task-checkbox @(isComplete ? "checked" : "")"
+                                                @onclick:stopPropagation
+                                                @onclick="() => ToggleComplete(note)">
+                                            @if (isComplete) { <span>✓</span> }
+                                        </button>
+                                    }
+                                    <div class="link-card-title @(isComplete ? "note-title--struck" : "")">@note.Title</div>
+                                </div>
                                 @if (!string.IsNullOrEmpty(note.Metadata.Url))
                                 {
                                     <div class="link-card-url">@note.Metadata.Url</div>
+                                }
+                                @if (isTaskOrAssignment)
+                                {
+                                    @NoteTypeDueDateFragment(note)
                                 }
                                 <div class="note-meta" style="margin-top:6px;">
                                     @note.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")
@@ -158,31 +174,39 @@
                         </div>
                     }
 
-                    @* ── Task / Assignment card ── *@
-                    else if (templateType == GroupTemplateType.Task || templateType == GroupTemplateType.Assignment)
+                    @* ── Dev Note card ── *@
+                    else if (templateType == GroupTemplateType.DevNote)
                     {
-                        <div class="note-card note-card--task @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "")"
-                                        @(note.Metadata.IsComplete == true ? "note-card--complete" : "")"
+                        <div class="note-card note-card--dev @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "") @(isComplete ? "note-card--complete" : "")"
                              @onclick="() => SelectNote(note)">
+                            <div class="dev-card-header">
+                                <span class="dev-card-lang">@(note.Metadata.Language ?? "—")</span>
+                                @if (!string.IsNullOrEmpty(note.Metadata.Status))
+                                {
+                                    <span class="dev-card-status dev-status--@note.Metadata.Status.ToLower().Replace(" ", "-")">
+                                        @note.Metadata.Status
+                                    </span>
+                                }
+                            </div>
                             <div class="note-card-body">
                                 <div class="task-card-header">
-                                    <button class="task-checkbox @(note.Metadata.IsComplete == true ? "checked" : "")"
-                                            @onclick:stopPropagation
-                                            @onclick="() => ToggleComplete(note)">
-                                        @if (note.Metadata.IsComplete == true) { <span>✓</span> }
-                                    </button>
-                                    <h3 class="note-title @(note.Metadata.IsComplete == true ? "note-title--struck" : "")">
-                                        @note.Title
-                                    </h3>
+                                    @if (isTaskOrAssignment)
+                                    {
+                                        <button class="task-checkbox @(isComplete ? "checked" : "")"
+                                                @onclick:stopPropagation
+                                                @onclick="() => ToggleComplete(note)">
+                                            @if (isComplete) { <span>✓</span> }
+                                        </button>
+                                    }
+                                    <h3 class="note-title @(isComplete ? "note-title--struck" : "")">@note.Title</h3>
                                 </div>
-                                @if (templateType == GroupTemplateType.Assignment && !string.IsNullOrEmpty(note.Metadata.DueDate))
+                                @if (!string.IsNullOrEmpty(note.Metadata.Url))
                                 {
-                                    var due = DateTime.TryParse(note.Metadata.DueDate, out var d) ? d : (DateTime?)null;
-                                    var overdue = due.HasValue && due.Value.Date < DateTime.Today && note.Metadata.IsComplete != true;
-                                    <div class="task-due @(overdue ? "task-due--overdue" : "")">
-                                        📅 @(due.HasValue ? due.Value.ToString("MMM d, yyyy") : note.Metadata.DueDate)
-                                        @if (overdue) { <span class="overdue-badge">Overdue</span> }
-                                    </div>
+                                    <div class="dev-card-url">🔗 @note.Metadata.Url</div>
+                                }
+                                @if (isTaskOrAssignment)
+                                {
+                                    @NoteTypeDueDateFragment(note)
                                 }
                                 @if (!string.IsNullOrEmpty(note.Body))
                                 {
@@ -199,26 +223,23 @@
                         </div>
                     }
 
-                    @* ── Dev Note card ── *@
-                    else if (templateType == GroupTemplateType.DevNote)
+                    @* ── Task / Assignment card (group template) ── *@
+                    else if (templateType == GroupTemplateType.Task || templateType == GroupTemplateType.Assignment)
                     {
-                        <div class="note-card note-card--dev @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "")"
+                        <div class="note-card note-card--task @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "") @(isComplete ? "note-card--complete" : "")"
                              @onclick="() => SelectNote(note)">
-                            <div class="dev-card-header">
-                                <span class="dev-card-lang">@(note.Metadata.Language ?? "—")</span>
-                                @if (!string.IsNullOrEmpty(note.Metadata.Status))
-                                {
-                                    <span class="dev-card-status dev-status--@note.Metadata.Status.ToLower().Replace(" ", "-")">
-                                        @note.Metadata.Status
-                                    </span>
-                                }
-                            </div>
                             <div class="note-card-body">
-                                <h3 class="note-title">@note.Title</h3>
-                                @if (!string.IsNullOrEmpty(note.Metadata.Url))
-                                {
-                                    <div class="dev-card-url">🔗 @note.Metadata.Url</div>
-                                }
+                                <div class="task-card-header">
+                                    <button class="task-checkbox @(isComplete ? "checked" : "")"
+                                            @onclick:stopPropagation
+                                            @onclick="() => ToggleComplete(note)">
+                                        @if (isComplete) { <span>✓</span> }
+                                    </button>
+                                    <h3 class="note-title @(isComplete ? "note-title--struck" : "")">
+                                        @note.Title
+                                    </h3>
+                                </div>
+                                @NoteTypeDueDateFragment(note)
                                 @if (!string.IsNullOrEmpty(note.Body))
                                 {
                                     <p class="note-preview">@Truncate(note.Body, 80)</p>
@@ -237,7 +258,7 @@
                     @* ── Standard card (default) ── *@
                     else
                     {
-                        <div class="note-card @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "")"
+                        <div class="note-card @(selectedNote?.Id == note.Id ? "selected" : "") @(_highlightedNoteIds.Contains(note.Id) ? "note-highlight" : "") @(isComplete ? "note-card--complete" : "")"
                              @onclick="() => SelectNote(note)">
                             @if (!string.IsNullOrEmpty(note.PhotoUrl))
                             {
@@ -253,7 +274,21 @@
                                         @note.Group.Name
                                     </div>
                                 }
-                                <h3 class="note-title">@note.Title</h3>
+                                <div class="task-card-header">
+                                    @if (isTaskOrAssignment)
+                                    {
+                                        <button class="task-checkbox @(isComplete ? "checked" : "")"
+                                                @onclick:stopPropagation
+                                                @onclick="() => ToggleComplete(note)">
+                                            @if (isComplete) { <span>✓</span> }
+                                        </button>
+                                    }
+                                    <h3 class="note-title @(isComplete ? "note-title--struck" : "")">@note.Title</h3>
+                                </div>
+                                @if (isTaskOrAssignment)
+                                {
+                                    @NoteTypeDueDateFragment(note)
+                                }
                                 @if (!string.IsNullOrEmpty(note.Body))
                                 {
                                     <p class="note-preview">@Truncate(note.Body, 120)</p>
@@ -285,6 +320,8 @@
     @if (selectedNote != null)
     {
         var detailTemplate = selectedNote.Group?.TemplateType ?? GroupTemplateType.Standard;
+        var detailIsTask = selectedNote.NoteType == NoteType.Task || selectedNote.NoteType == NoteType.Assignment;
+        var detailIsAssignment = selectedNote.NoteType == NoteType.Assignment;
 
         <aside class="detail-panel">
             <div class="detail-header">
@@ -308,13 +345,26 @@
             @* Title *@
             <div class="detail-section">
                 <label class="detail-label">Title</label>
-                <input class="detail-input" @bind="selectedNote.Title"
-                       @bind:event="oninput" placeholder="Note title…" />
+                <input class="detail-input" 
+                         @bind="selectedNote.Title"
+                       @bind:event="onchange"
+                       @bind:after="SaveTitle"
+                       placeholder="Note title…" />
             </div>
 
-            @* ── Template-specific fields ── *@
+            @* Note Type *@
+            <div class="detail-section">
+                <label class="detail-label">Type</label>
+                <select class="detail-select"
+                        @onchange="async e => await ChangeNoteType(e.Value?.ToString())">
+                    <option value="note"       selected="@(selectedNote.NoteTypeRaw == "note")">📄 Note</option>
+                    <option value="task"       selected="@(selectedNote.NoteTypeRaw == "task")">☑️ Task</option>
+                    <option value="assignment" selected="@(selectedNote.NoteTypeRaw == "assignment")">📅 Assignment</option>
+                </select>
+            </div>
 
-            @if (detailTemplate == GroupTemplateType.Task || detailTemplate == GroupTemplateType.Assignment)
+            @* Task / Assignment — completion toggle *@
+            @if (detailIsTask)
             {
                 <div class="detail-section">
                     <label class="detail-label">Status</label>
@@ -330,7 +380,8 @@
                 </div>
             }
 
-            @if (detailTemplate == GroupTemplateType.Assignment)
+            @* Assignment — due date *@
+            @if (detailIsAssignment)
             {
                 <div class="detail-section">
                     <label class="detail-label">Due Date</label>
@@ -340,6 +391,7 @@
                 </div>
             }
 
+            @* Dev Note fields *@
             @if (detailTemplate == GroupTemplateType.DevNote)
             {
                 <div class="detail-section">
@@ -360,13 +412,14 @@
                             @onchange="async e => { var v = e.Value?.ToString(); await UpdateMetadataField(MetaField.Status, v); }">
                         <option value="" selected="@(string.IsNullOrEmpty(selectedNote.Metadata.Status))">— None —</option>
                         <option value="In Progress" selected="@(selectedNote.Metadata.Status == "In Progress")">In Progress</option>
-                        <option value="Review" selected="@(selectedNote.Metadata.Status == "Review")">Review</option>
-                        <option value="Done" selected="@(selectedNote.Metadata.Status == "Done")">Done</option>
-                        <option value="Blocked" selected="@(selectedNote.Metadata.Status == "Blocked")">Blocked</option>
+                        <option value="Review"      selected="@(selectedNote.Metadata.Status == "Review")">Review</option>
+                        <option value="Done"        selected="@(selectedNote.Metadata.Status == "Done")">Done</option>
+                        <option value="Blocked"     selected="@(selectedNote.Metadata.Status == "Blocked")">Blocked</option>
                     </select>
                 </div>
             }
 
+            @* Link fields *@
             @if (detailTemplate == GroupTemplateType.Link)
             {
                 <div class="detail-section">
@@ -425,12 +478,13 @@
             </div>
 
             <div class="detail-footer">
-                <BSButton Color="BSColor.Danger" Size="Size.Small" @onclick="DeleteSelected">
+                <BSButton Color="BSColor.Danger" Size="Size.Small" @onclick="ConfirmDelete">
                     🗑 Delete
                 </BSButton>
+                <!--
                 <BSButton Color="BSColor.Primary" Size="Size.Small" @onclick="SaveNote">
                     💾 Save
-                </BSButton>
+                </BSButton>-->
                 <span class="detail-date">
                     @selectedNote.UpdatedAt.ToLocalTime().ToString("MMM d, h:mm tt")
                 </span>
@@ -557,7 +611,6 @@
     private string newTagColor = "#10b981";
     private string newProjectName = "";
     private string newProjectTagId = "";
-
     private string newGroupTemplate = "standard";
 
     private static readonly string[] ColorPalette = {
@@ -584,28 +637,12 @@
     private System.Threading.Timer? _highlightTimer;
     private CancellationTokenSource _pollingCts = new();
 
-    //private Supabase.Realtime.RealtimeChannel? _notesChannel;
-
-    //protected override async Task OnInitializedAsync() => await LoadData();
-    /*protected override async Task OnInitializedAsync()
-    {
-        await LoadData();
-        try
-        {
-            await SupabaseClient.InitializeAsync();
-            await SubscribeToNotes();
-        }
-        catch(Exception ex)
-        {
-            Console.WriteLine($"Realtime subscription failed: {ex.Message}");
-
-        }
-    }*/
     protected override async Task OnInitializedAsync()
     {
         await LoadData();
         _ = StartPollingAsync();
     }
+
     private async Task LoadData()
     {
         loading = true;
@@ -615,7 +652,11 @@
         projects = await Svc.GetProjectsAsync();
         ApplyFilters();
         loading = false;
+
+        if (selectedNote != null)
+            selectedNote = notes.FirstOrDefault(n => n.Id == selectedNote.Id);
     }
+
     private async Task StartPollingAsync()
     {
         while (!_pollingCts.IsCancellationRequested)
@@ -638,14 +679,12 @@
                 });
             }
 
-            // Also update any changed notes silently
             foreach (var fresh_note in fresh)
             {
                 var idx = notes.FindIndex(n => n.Id == fresh_note.Id);
                 if (idx >= 0) notes[idx] = fresh_note;
             }
 
-            // Remove deleted notes
             notes.RemoveAll(n => fresh.All(f => f.Id != n.Id));
 
             if (newNotes.Any())
@@ -654,62 +693,6 @@
             await InvokeAsync(StateHasChanged);
         }
     }
-   /* private async Task SubscribeToNotes()
-    {
-        _notesChannel = SupabaseClient.Realtime.Channel("notes-changes");
-        _notesChannel.Register(new PostgresChangesOptions("public", "notes", ListenType.All));
-
-        _notesChannel.AddPostgresChangeHandler(ListenType.All, async (sender, change) =>
-        {
-            var isDelete = change.Event == Constants.EventType.Delete;
-            var rawRecord = isDelete ? change.Payload?.Data?.OldRecord : change.Payload?.Data?.Record;
-            var id = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, object>>(
-                      rawRecord?.ToString() ?? "{}")
-                      ?.GetValueOrDefault("id")?.ToString();
-
-            if (string.IsNullOrEmpty(id)) return;
-
-            switch (change.Event)
-            {
-                case Constants.EventType.Insert:
-                    {
-                        var newNote = await Svc.GetNoteByIdAsync(id);
-                        if (newNote == null) break;
-                        notes.Insert(0, newNote);
-                        ApplyFilters();
-                        _highlightedNoteIds.Add(newNote.Id);
-                        ShowToast($"New note arrived: \"{newNote.Title}\"");
-                        _highlightTimer = new System.Threading.Timer(_ =>
-                    {
-                        _highlightedNoteIds.Remove(newNote.Id);
-                        InvokeAsync(StateHasChanged);
-                    }, null, 4000, System.Threading.Timeout.Infinite);
-                        break;
-                    }
-                case Constants.EventType.Update:
-                    {
-                        var updated = await Svc.GetNoteByIdAsync(id);
-                        if (updated == null) break;
-                        var idx = notes.FindIndex(n => n.Id == updated.Id);
-                        if (idx >= 0) notes[idx] = updated;
-                        if (selectedNote?.Id == updated.Id) selectedNote = updated;
-                        ApplyFilters();
-                        break;
-                    }
-                case Constants.EventType.Delete:
-                    {
-                        notes.RemoveAll(n => n.Id == id);
-                        if (selectedNote?.Id == id) selectedNote = null;
-                        ApplyFilters();
-                        break;
-                    }
-            }
-
-            await InvokeAsync(StateHasChanged);
-        });
-
-        await _notesChannel.Subscribe();
-    }*/
 
     private void ShowToast(string message)
     {
@@ -783,6 +766,18 @@
         await LoadData();
     }
 
+    private async Task ChangeNoteType(string? noteType)
+    {
+        if (selectedNote == null || string.IsNullOrEmpty(noteType)) return;
+        selectedNote.NoteTypeRaw = noteType;
+        // Ensure is_complete exists when upgrading to task/assignment
+        if (noteType is "task" or "assignment")
+            selectedNote.Metadata.IsComplete ??= false;
+        selectedNote.InvalidateMetadataCache();
+        await Svc.UpdateNoteAsync(selectedNote);
+        await LoadData();
+    }
+
     private async Task ToggleTag(Tag tag)
     {
         if (selectedNote == null) return;
@@ -803,6 +798,19 @@
         }
 
         await LoadData();
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if(selectedNote == null)
+            return;
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete \"{selectedNote.Title}\"? This cannot be undone.");
+        if(confirmed)
+        {
+            await Svc.DeleteNoteAsync(selectedNote.Id);
+            selectedNote = null;
+            await LoadData();
+        }
     }
 
     private async Task DeleteSelected()
@@ -907,9 +915,10 @@
 
     private async Task ToggleComplete(Note note)
     {
-        note.Metadata.IsComplete = !(note.Metadata.IsComplete ?? false);
-        note.InvalidateMetadataCache();
-        await Svc.UpdateNoteMetadataAsync(note.Id, note.Metadata);
+        var metadata = note.Metadata;
+        metadata.IsComplete = !(metadata.IsComplete ?? false);
+        //note.InvalidateMetadataCache();
+        await Svc.UpdateNoteMetadataAsync(note.Id, metadata);
         await LoadData();
     }
 
@@ -920,28 +929,63 @@
         await LoadData();
     }
 
+    private async Task SaveTitle()
+    {
+        if (selectedNote == null) return;
+        //selectedNote.Title = value ?? string.Empty;
+        try
+        {
+            Console.WriteLine($"Saving title: {selectedNote.Title}");
+            await Svc.UpdateNoteAsync(selectedNote);
+            Console.WriteLine("Save succeeded");
+            var idx = notes.FindIndex(n => n.Id == selectedNote.Id);
+            if (idx >= 0) notes[idx] = selectedNote;
+            ApplyFilters();
+            //StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Save failed: {ex.Message}");
+            Console.WriteLine($"Stack: {ex.StackTrace}");
+        }
+    }
+
     private async Task UpdateMetadataField(MetaField field, string? value)
     {
         if (selectedNote == null) return;
         switch (field)
         {
-            case MetaField.Url: selectedNote.Metadata.Url = value; break;
+            case MetaField.Url:      selectedNote.Metadata.Url = value; break;
             case MetaField.Language: selectedNote.Metadata.Language = value; break;
-            case MetaField.Status: selectedNote.Metadata.Status = value; break;
-            case MetaField.DueDate: selectedNote.Metadata.DueDate = value; break;
+            case MetaField.Status:   selectedNote.Metadata.Status = value; break;
+            case MetaField.DueDate:  selectedNote.Metadata.DueDate = value; break;
         }
-        selectedNote.InvalidateMetadataCache();
+        //selectedNote.InvalidateMetadataCache();
         await Svc.UpdateNoteMetadataAsync(selectedNote.Id, selectedNote.Metadata);
         await LoadData();
     }
 
-    /*public async ValueTask DisposeAsync()
+    // Shared due date fragment for task/assignment cards
+    private RenderFragment NoteTypeDueDateFragment(Note note) => __builder =>
     {
-        _toastTimer?.Dispose();
-        _highlightTimer?.Dispose();
-        _notesChannel?.Unsubscribe();
-        await Task.CompletedTask;
-    }*/
+        if (note.NoteType == NoteType.Assignment && !string.IsNullOrEmpty(note.Metadata.DueDate))
+        {
+            var due = DateTime.TryParse(note.Metadata.DueDate, out var d) ? d : (DateTime?)null;
+            var overdue = due.HasValue && due.Value.Date < DateTime.Today && note.Metadata.IsComplete != true;
+            __builder.OpenElement(0, "div");
+            __builder.AddAttribute(1, "class", $"task-due{(overdue ? " task-due--overdue" : "")}");
+            __builder.AddContent(2, $"📅 {(due.HasValue ? due.Value.ToString("MMM d, yyyy") : note.Metadata.DueDate)}");
+            if (overdue)
+            {
+                __builder.OpenElement(3, "span");
+                __builder.AddAttribute(4, "class", "overdue-badge");
+                __builder.AddContent(5, "Overdue");
+                __builder.CloseElement();
+            }
+            __builder.CloseElement();
+        }
+    };
+
     public async ValueTask DisposeAsync()
     {
         _toastTimer?.Dispose();

@@ -6,26 +6,34 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-import { Note, Tag, RootStackParamList } from '../types';
+import { Note, Tag, NoteType, RootStackParamList } from '../types';
 import { fetchNotes, fetchTags, createNote, updateNote, uploadPhoto } from '../services/notesService';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 type EditorRoute = RouteProp<RootStackParamList, 'NoteEditor'>;
 
-const TAG_PALETTE = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899'];
+const TYPE_OPTIONS: { value: NoteType; label: string; icon: string }[] = [
+  { value: 'note',       label: 'Note',       icon: 'document-text-outline' },
+  { value: 'task',       label: 'Task',        icon: 'checkbox-outline' },
+  { value: 'assignment', label: 'Assignment',  icon: 'calendar-outline' },
+];
 
 export default function NoteEditorScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<EditorRoute>();
   const noteId = route.params?.noteId;
 
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [title, setTitle]               = useState('');
+  const [body, setBody]                 = useState('');
+  const [photoUri, setPhotoUri]         = useState<string | null>(null);
+  const [photoUrl, setPhotoUrl]         = useState<string | null>(null);
+  const [allTags, setAllTags]           = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [noteType, setNoteType]         = useState<NoteType>('note');
+  const [dueDate, setDueDate]           = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [uploading, setUploading]       = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -40,6 +48,10 @@ export default function NoteEditorScreen() {
           setBody(note.body ?? '');
           setPhotoUrl(note.photo_url);
           setSelectedTagIds(note.tags?.map(t => t.id) ?? []);
+          setNoteType(note.note_type ?? 'note');
+          if (note.note_metadata?.due_date) {
+            setDueDate(new Date(note.note_metadata.due_date));
+          }
         }
       }
     })();
@@ -92,10 +104,20 @@ export default function NoteEditorScreen() {
         setUploading(false);
       }
 
+      const metadata: Record<string, any> = {};
+      if (noteType === 'task' || noteType === 'assignment') {
+        metadata.is_complete = false;
+      }
+      if (noteType === 'assignment' && dueDate) {
+        metadata.due_date = dueDate.toISOString().split('T')[0];
+      }
+
       const payload: Partial<Note> = {
         title: title.trim(),
         body: body.trim() || null,
         photo_url: finalPhotoUrl,
+        note_type: noteType,
+        note_metadata: metadata,
       };
 
       if (noteId) {
@@ -114,12 +136,16 @@ export default function NoteEditorScreen() {
 
   const displayPhoto = photoUri || photoUrl;
 
+  const formatDate = (date: Date) =>
+    date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+
         {/* Nav Bar */}
         <View style={styles.navbar}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.navBtn}>
@@ -136,6 +162,64 @@ export default function NoteEditorScreen() {
         </View>
 
         <View style={styles.form}>
+
+          {/* Type Picker */}
+          <Text style={styles.sectionLabel}>Type</Text>
+          <View style={styles.typePicker}>
+            {TYPE_OPTIONS.map(opt => {
+              const active = noteType === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.typeBtn, active && styles.typeBtnActive]}
+                  onPress={() => setNoteType(opt.value)}
+                >
+                  <Ionicons
+                    name={opt.icon as any}
+                    size={18}
+                    color={active ? '#fff' : '#6366f1'}
+                  />
+                  <Text style={[styles.typeBtnText, active && styles.typeBtnTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Due Date — Assignment only */}
+          {noteType === 'assignment' && (
+            <View style={styles.dueDateRow}>
+              <Ionicons name="calendar-outline" size={18} color="#6366f1" />
+              <Text style={styles.dueDateLabel}>Due date</Text>
+              <TouchableOpacity
+                style={styles.dueDateBtn}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={styles.dueDateBtnText}>
+                  {dueDate ? formatDate(dueDate) : 'Set date'}
+                </Text>
+              </TouchableOpacity>
+              {dueDate && (
+                <TouchableOpacity onPress={() => setDueDate(null)} style={{ padding: 4 }}>
+                  <Ionicons name="close-circle" size={18} color="#94a3b8" />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={dueDate ?? new Date()}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              onChange={(_, selected) => {
+                setShowDatePicker(Platform.OS === 'ios');
+                if (selected) setDueDate(selected);
+              }}
+            />
+          )}
+
           {/* Title */}
           <TextInput
             style={styles.titleInput}
@@ -237,6 +321,35 @@ const styles = StyleSheet.create({
   },
   saveBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
   form: { padding: 20 },
+
+  // Type Picker
+  typePicker: {
+    flexDirection: 'row', gap: 10, marginBottom: 20,
+  },
+  typeBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, borderRadius: 10,
+    borderWidth: 1.5, borderColor: '#6366f1', backgroundColor: '#fff',
+  },
+  typeBtnActive: {
+    backgroundColor: '#6366f1', borderColor: '#6366f1',
+  },
+  typeBtnText: { fontSize: 13, fontWeight: '600', color: '#6366f1' },
+  typeBtnTextActive: { color: '#fff' },
+
+  // Due Date
+  dueDateRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fff', borderRadius: 12, padding: 14,
+    marginBottom: 20, borderWidth: 1, borderColor: '#e2e8f0',
+  },
+  dueDateLabel: { fontSize: 14, fontWeight: '600', color: '#475569', flex: 1 },
+  dueDateBtn: {
+    backgroundColor: '#f1f5f9', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 8,
+  },
+  dueDateBtnText: { fontSize: 14, fontWeight: '600', color: '#6366f1' },
+
   titleInput: {
     fontSize: 22, fontWeight: '700', color: '#1e293b',
     borderBottomWidth: 1, borderBottomColor: '#e2e8f0',
@@ -248,7 +361,10 @@ const styles = StyleSheet.create({
     padding: 14, marginBottom: 24,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
-  sectionLabel: { fontSize: 13, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
+  sectionLabel: {
+    fontSize: 13, fontWeight: '700', color: '#94a3b8',
+    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
+  },
   photoContainer: { borderRadius: 12, overflow: 'hidden', marginBottom: 24 },
   photo: { width: '100%', height: 220, resizeMode: 'cover' },
   removePhoto: { position: 'absolute', top: 8, right: 8 },
