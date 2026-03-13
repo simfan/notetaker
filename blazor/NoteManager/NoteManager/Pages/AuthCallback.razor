@@ -1,0 +1,68 @@
+﻿@page "/auth/callback"
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f8fafc;">
+    <div style="text-align:center;">
+        <p style="font-size:48px;">📋</p>
+        <p style="color:#64748b;font-size:16px;">@message</p>
+    </div>
+</div>
+
+@code {
+    private string message = "Signing you in…";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Supabase puts tokens in the URL fragment after OAuth redirect
+            // e.g. /auth/callback#access_token=xxx&refresh_token=yyy
+            var fragment = await JS.InvokeAsync<string>("eval",
+                "window.location.hash");
+
+            if (string.IsNullOrEmpty(fragment))
+            {
+                message = "No token found. Redirecting to login…";
+                await Task.Delay(1500);
+                Nav.NavigateTo("/login");
+                return;
+            }
+
+            // Parse fragment manually (strip leading #)
+            var hash = fragment.TrimStart('#');
+            var pairs = hash.Split('&')
+                .Select(p => p.Split('=', 2))
+                .Where(p => p.Length == 2)
+                .ToDictionary(p => p[0], p => Uri.UnescapeDataString(p[1]));
+
+            if (!pairs.TryGetValue("access_token", out var accessToken) ||
+                !pairs.TryGetValue("refresh_token", out var refreshToken))
+            {
+                message = "Sign in failed. Redirecting to login…";
+                await Task.Delay(1500);
+                Nav.NavigateTo("/login");
+                return;
+            }
+
+            var result = await Auth.HandleOAuthCallbackAsync(accessToken, refreshToken);
+            if (result.Success)
+            {
+                Nav.NavigateTo("/");
+            }
+            else
+            {
+                message = result.ErrorMessage ?? "Sign in failed. Redirecting…";
+                await Task.Delay(1500);
+                Nav.NavigateTo("/login");
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"Error: {ex.Message}";
+            await Task.Delay(2000);
+            Nav.NavigateTo("/login");
+        }
+    }
+}

@@ -1,0 +1,166 @@
+﻿@page "/settings"
+@inject IJSRuntime JS
+@inject JiraService JiraSvc
+
+<PageTitle>Settings — NoteKeeper</PageTitle>
+
+<div class="settings-page">
+    <h2 class="settings-title">⚙️ Settings</h2>
+
+    <!-- Jira Credentials -->
+    <div class="settings-card">
+        <h3 class="settings-section-title">Jira Credentials</h3>
+        <p class="settings-hint">
+            Generate an API token at
+            <a href="https://id.atlassian.net/manage-profile/security/api-tokens" target="_blank">
+                id.atlassian.net
+            </a>
+        </p>
+
+        <div class="settings-field">
+            <label class="settings-label">Jira Base URL</label>
+            <input class="settings-input" placeholder="https://yoursite.atlassian.net"
+                   @bind="jiraBaseUrl" />
+        </div>
+        <div class="settings-field">
+            <label class="settings-label">Email</label>
+            <input class="settings-input" type="email" placeholder="you@example.com"
+                   @bind="jiraEmail" />
+        </div>
+        <div class="settings-field">
+            <label class="settings-label">API Token</label>
+            <input class="settings-input" type="password" placeholder="••••••••••••••••"
+                   @bind="jiraApiToken" />
+        </div>
+
+        <div class="settings-actions">
+            <button class="settings-btn settings-btn--primary" @onclick="SaveCredentials">
+                💾 Save Credentials
+            </button>
+            <button class="settings-btn settings-btn--ghost" @onclick="TestConnection"
+                    disabled="@testingConnection">
+                @(testingConnection ? "Testing…" : "🔌 Test Connection")
+            </button>
+        </div>
+
+        @if (connectionMessage != null)
+        {
+            <div class="settings-feedback @(connectionSuccess ? "feedback--success" : "feedback--error")">
+                @(connectionSuccess ? "✅" : "❌") @connectionMessage
+            </div>
+        }
+        @if (savedMessage != null)
+        {
+            <div class="settings-feedback feedback--success">✅ @savedMessage</div>
+        }
+    </div>
+
+    <!-- Jira Project Keys -->
+    <div class="settings-card">
+        <h3 class="settings-section-title">Jira Projects</h3>
+        <p class="settings-hint">
+            Add the project keys for any Jira projects you export to (e.g. <code>NK</code>, <code>CHEF</code>).
+            These appear in the export modal when sending a note to Jira.
+        </p>
+
+        <div class="settings-key-list">
+            @foreach (var key in projectKeys)
+            {
+                <div class="settings-key-row">
+                    <span class="settings-key-badge">@key</span>
+                    <button class="settings-key-remove" @onclick="() => RemoveKey(key)">✕</button>
+                </div>
+            }
+            @if (!projectKeys.Any())
+            {
+                <p style="color:#94a3b8;font-size:13px;">No project keys added yet.</p>
+            }
+        </div>
+
+        <div class="settings-key-add">
+            <input class="settings-input settings-input--inline"
+                   placeholder="Project key (e.g. NK)"
+                   @bind="newKeyInput"
+                   @bind:event="oninput"
+                   @onkeydown="HandleKeyDown" />
+            <button class="settings-btn settings-btn--primary" @onclick="AddKey">+ Add</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string jiraBaseUrl = "";
+    private string jiraEmail = "";
+    private string jiraApiToken = "";
+    private List<string> projectKeys = new();
+    private string newKeyInput = "";
+
+    private bool testingConnection;
+    private bool connectionSuccess;
+    private string? connectionMessage;
+    private string? savedMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        jiraBaseUrl = await JS.InvokeAsync<string?>("localStorage.getItem", "jira_base_url") ?? "";
+        jiraEmail = await JS.InvokeAsync<string?>("localStorage.getItem", "jira_email") ?? "";
+        jiraApiToken = await JS.InvokeAsync<string?>("localStorage.getItem", "jira_api_token") ?? "";
+
+        var keysJson = await JS.InvokeAsync<string?>("localStorage.getItem", "jira_project_keys");
+        if (!string.IsNullOrEmpty(keysJson))
+        {
+            try { projectKeys = System.Text.Json.JsonSerializer.Deserialize<List<string>>(keysJson) ?? new(); }
+            catch { projectKeys = new(); }
+        }
+    }
+
+    private async Task SaveCredentials()
+    {
+        await JS.InvokeVoidAsync("localStorage.setItem", "jira_base_url", jiraBaseUrl.Trim());
+        await JS.InvokeVoidAsync("localStorage.setItem", "jira_email", jiraEmail.Trim());
+        await JS.InvokeVoidAsync("localStorage.setItem", "jira_api_token", jiraApiToken.Trim());
+        savedMessage = "Credentials saved.";
+        connectionMessage = null;
+        _ = Task.Delay(3000).ContinueWith(_ => { savedMessage = null; InvokeAsync(StateHasChanged); });
+    }
+
+    private async Task TestConnection()
+    {
+        testingConnection = true;
+        connectionMessage = null;
+        StateHasChanged();
+
+        var (success, msg) = await JiraSvc.TestConnectionAsync(
+            jiraBaseUrl.Trim(), jiraEmail.Trim(), jiraApiToken.Trim());
+
+        connectionSuccess = success;
+        connectionMessage = msg;
+        testingConnection = false;
+    }
+
+    private async Task AddKey()
+    {
+        var key = newKeyInput.Trim().ToUpper();
+        if (string.IsNullOrEmpty(key) || projectKeys.Contains(key)) return;
+        projectKeys.Add(key);
+        newKeyInput = "";
+        await PersistKeys();
+    }
+
+    private async Task RemoveKey(string key)
+    {
+        projectKeys.Remove(key);
+        await PersistKeys();
+    }
+
+    private async Task PersistKeys()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(projectKeys);
+        await JS.InvokeVoidAsync("localStorage.setItem", "jira_project_keys", json);
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AddKey();
+    }
+}

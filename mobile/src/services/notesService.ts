@@ -3,6 +3,14 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { Note, Tag } from '../types';
 
+// ── Helper: get current user ID (throws if not authenticated) ──
+
+async function getUserId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  return user.id;
+}
+
 // ── Notes ──────────────────────────────────────────────────
 
 export async function fetchNotes(): Promise<Note[]> {
@@ -20,8 +28,7 @@ export async function fetchNotes(): Promise<Note[]> {
 }
 
 export async function createNote(note: Partial<Note>, tagIds: string[] = []): Promise<Note> {
-  const user = (await supabase.auth.getUser()).data.user;
-  const userId = user?.id ?? '00000000-0000-0000-0000-000000000000';
+  const userId = await getUserId();
 
   // Check rules before insert
   const groupId = await applyRules(tagIds);
@@ -75,8 +82,7 @@ export async function deleteNote(id: string): Promise<void> {
 // ── Photo Upload ───────────────────────────────────────────
 
 export async function uploadPhoto(localUri: string): Promise<string> {
-  const user = (await supabase.auth.getUser()).data.user;
-  const userId = user?.id ?? '00000000-0000-0000-0000-000000000000';
+  const userId = await getUserId();
 
   const base64 = await FileSystem.readAsStringAsync(localUri, {
     encoding: 'base64' as any,
@@ -104,8 +110,7 @@ export async function fetchTags(): Promise<Tag[]> {
 }
 
 export async function createTag(name: string, color: string): Promise<Tag> {
-  const user = (await supabase.auth.getUser()).data.user;
-  const userId = user?.id ?? '00000000-0000-0000-0000-000000000000';
+  const userId = await getUserId();
 
   const { data, error } = await supabase
     .from('tags')

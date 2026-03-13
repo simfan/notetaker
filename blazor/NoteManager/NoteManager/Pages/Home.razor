@@ -1,6 +1,7 @@
 ﻿@page "/"
 @inject SupabaseService Svc
 @inject IJSRuntime JS
+@*inject JiraService JiraSvc*@
 @using System.Text.Json
 
 <PageTitle>NoteKeeper — Desktop</PageTitle>
@@ -123,7 +124,8 @@
                     }
                     <span style="color:#64748b;font-size:13px;">@filteredNotes.Count note@(filteredNotes.Count == 1 ? "" : "s")</span>
                     <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-                        <BSButton Color="BSColor.Primary" Size="Size.Small" @onclick="() => ExportAllNotes(activeProject)">
+                        <BSButton Color="BSColor.Primary" Size="Size.Small"
+                                  @onclick="() => OpenExportModal(null, activeProject)">
                             ⬇ Export All
                         </BSButton>
                         <button class="project-banner-delete" @onclick="() => DeleteProject(activeProject.Id)">
@@ -188,6 +190,19 @@
                                 <div class="note-meta" style="margin-top:6px;">
                                     @note.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")
                                 </div>
+                                @if (SelectedProjectId != null)
+                                {
+                                    <div class="note-card-export-row">
+                                        <button class="note-export-btn" @onclick:stopPropagation
+                                                @onclick="() => OpenExportModal(note, null)">
+                                            ⬇ Export
+                                        </button>
+                                        <button class="note-export-btn note-export-btn--jira" @onclick:stopPropagation
+                                                @onclick="async () => await OpenJiraModal(note)">
+                                            ☁ Jira
+                                        </button>
+                                    </div>
+                                }
                             </div>
                         </div>
                     }
@@ -237,6 +252,19 @@
                                     }
                                 </div>
                                 <div class="note-meta">@note.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
+                                @if (SelectedProjectId != null)
+                                {
+                                    <div class="note-card-export-row">
+                                        <button class="note-export-btn" @onclick:stopPropagation
+                                                @onclick="() => OpenExportModal(note, null)">
+                                            ⬇ Export
+                                        </button>
+                                        <button class="note-export-btn note-export-btn--jira" @onclick:stopPropagation
+                                                @onclick="async () => await OpenJiraModal(note)">
+                                            ☁ Jira
+                                        </button>
+                                    </div>
+                                }
                             </div>
                         </div>
                     }
@@ -269,6 +297,19 @@
                                     }
                                 </div>
                                 <div class="note-meta">@note.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
+                                @if (SelectedProjectId != null)
+                                {
+                                    <div class="note-card-export-row">
+                                        <button class="note-export-btn" @onclick:stopPropagation
+                                                @onclick="() => OpenExportModal(note, null)">
+                                            ⬇ Export
+                                        </button>
+                                        <button class="note-export-btn note-export-btn--jira" @onclick:stopPropagation
+                                                @onclick="async () => await OpenJiraModal(note)">
+                                            ☁ Jira
+                                        </button>
+                                    </div>
+                                }
                             </div>
                         </div>
                     }
@@ -319,10 +360,16 @@
                                 </div>
                                 @if (SelectedProjectId != null)
                                 {
-                                    <button class="note-export-btn" @onclick:stopPropagation
-                                            @onclick="() => ExportNote(note)">
-                                        ⬇ Export
-                                    </button>
+                                    <div class="note-card-export-row">
+                                        <button class="note-export-btn" @onclick:stopPropagation
+                                                @onclick="() => OpenExportModal(note, null)">
+                                            ⬇ Export
+                                        </button>
+                                        <button class="note-export-btn note-export-btn--jira" @onclick:stopPropagation
+                                                @onclick="async () => await OpenJiraModal(note)">
+                                            ☁ Jira
+                                        </button>
+                                    </div>
                                 }
                                 <div class="note-meta">@note.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
                             </div>
@@ -363,8 +410,8 @@
             @* Title *@
             <div class="detail-section">
                 <label class="detail-label">Title</label>
-                <input class="detail-input" 
-                         @bind="selectedNote.Title"
+                <input class="detail-input"
+                       @bind="selectedNote.Title"
                        @bind:event="onchange"
                        @bind:after="SaveTitle"
                        placeholder="Note title…" />
@@ -499,10 +546,6 @@
                 <BSButton Color="BSColor.Danger" Size="Size.Small" @onclick="ConfirmDelete">
                     🗑 Delete
                 </BSButton>
-                <!--
-                <BSButton Color="BSColor.Primary" Size="Size.Small" @onclick="SaveNote">
-                    💾 Save
-                </BSButton>-->
                 <span class="detail-date">
                     @selectedNote.UpdatedAt.ToLocalTime().ToString("MMM d, h:mm tt")
                 </span>
@@ -599,6 +642,167 @@
     </div>
 }
 
+<!-- Export Format Modal -->
+@if (showExportModal)
+{
+    <div class="modal-backdrop" @onclick="CloseExportModal">
+        <div class="modal-card" @onclick:stopPropagation>
+            <h3 class="modal-title">⬇ Export</h3>
+
+            @if (exportIsBulk)
+            {
+                <p class="export-modal-subtitle">
+                    Exporting <strong>@filteredNotes.Count note@(filteredNotes.Count == 1 ? "" : "s")</strong>
+                    from <strong>@exportBulkProjectName</strong>
+                </p>
+            }
+            else
+            {
+                <p class="export-modal-subtitle">
+                    Exporting <strong>@exportNote?.Title</strong>
+                </p>
+            }
+
+            <div class="export-format-grid">
+                <button class="export-format-btn" @onclick='() => RunExport("json")'>
+                    <span class="export-format-icon">📄</span>
+                    <span class="export-format-label">JSON</span>
+                    <span class="export-format-desc">Structured data</span>
+                </button>
+                <button class="export-format-btn" @onclick='() => RunExport("markdown")'>
+                    <span class="export-format-icon">📝</span>
+                    <span class="export-format-label">Markdown</span>
+                    <span class="export-format-desc">.md file</span>
+                </button>
+                <button class="export-format-btn" @onclick='() => RunExport("csv")'>
+                    <span class="export-format-icon">📊</span>
+                    <span class="export-format-label">CSV</span>
+                    <span class="export-format-desc">Spreadsheet</span>
+                </button>
+                <button class="export-format-btn" @onclick='() => RunExport("pdf")'>
+                    <span class="export-format-icon">🖨</span>
+                    <span class="export-format-label">PDF</span>
+                    <span class="export-format-desc">Print / save</span>
+                </button>
+                <button class="export-format-btn" @onclick='() => RunExport("clipboard")'>
+                    <span class="export-format-icon">📋</span>
+                    <span class="export-format-label">Clipboard</span>
+                    <span class="export-format-desc">Copy to paste</span>
+                </button>
+            </div>
+
+            @if (exportFeedback != null)
+            {
+                <div class="settings-feedback @(exportFeedbackSuccess ? "feedback--success" : "feedback--error")"
+                     style="margin-top:12px;">
+                    @exportFeedback
+                </div>
+            }
+
+            <div class="modal-actions" style="margin-top:16px;">
+                <BSButton Color="BSColor.Light" @onclick="CloseExportModal">Close</BSButton>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Jira Export Modal -->
+@if (showJiraModal && jiraNote != null)
+{
+    <div class="modal-backdrop" @onclick="CloseJiraModal">
+        <div class="modal-card" @onclick:stopPropagation>
+            <h3 class="modal-title">☁ Export to Jira</h3>
+
+            @if (!jiraConnected)
+            {
+                <div class="jira-connect-prompt">
+                    <p style="color:#64748b;font-size:14px;margin-bottom:12px;">
+                        Connect your Jira account to send notes as issues.
+                    </p>
+                    <a class="jira-connect-btn" href="http://localhost:5100/jira/auth" target="_blank"
+                       @onclick="() => _ = PollForJiraConnection()">
+                        🔗 Connect to Jira
+                    </a>
+                </div>
+            }
+            else
+            {
+                <div class="settings-feedback feedback--success" style="margin-bottom:12px;">
+                    ✅ Connected to Jira
+                </div>
+
+                <label class="form-label">Summary (title)</label>
+                <input class="form-control mb-3" @bind="jiraSummary" />
+
+                <label class="form-label">Description</label>
+                <textarea class="form-control mb-3" rows="4" @bind="jiraBody"></textarea>
+
+                <label class="form-label">Project</label>
+                @if (jiraCheckingStatus)
+                {
+                    <p style="font-size:13px;color:#94a3b8;">Loading projects…</p>
+                }
+                else if (jiraProjects.Any())
+                {
+                    <select class="form-select mb-3"
+                            @onchange="async e => await OnJiraProjectChanged(e.Value?.ToString())">
+                        @foreach (var p in jiraProjects)
+                        {
+                            <option value="@p.Key">@p.Name (@p.Key)</option>
+                        }
+                    </select>
+                }
+                else
+                {
+                    <input class="form-control mb-3" placeholder="e.g. NK" @bind="jiraProjectKey" />
+                }
+
+                <label class="form-label">Issue Type</label>
+                @if (jiraIssueTypes.Any())
+                {
+                    <select class="form-select mb-3" @bind="jiraIssueTypeId">
+                        @foreach (var t in jiraIssueTypes)
+                        {
+                            <option value="@t.Id">@t.Name</option>
+                        }
+                    </select>
+                }
+                else
+                {
+                    <select class="form-select mb-3" @bind="jiraIssueTypeId">
+                        <option value="">— Select project first —</option>
+                    </select>
+                }
+            }
+
+            @if (jiraErrorMessage != null)
+            {
+                <div class="settings-feedback feedback--error" style="margin-bottom:12px;">
+                    ❌ @jiraErrorMessage
+                </div>
+            }
+            @if (jiraSuccessUrl != null)
+            {
+                <div class="settings-feedback feedback--success" style="margin-bottom:12px;">
+                    ✅ Issue created!
+                    <a href="@jiraSuccessUrl" target="_blank" style="margin-left:6px;">
+                        View in Jira ↗
+                    </a>
+                </div>
+            }
+
+            <div class="modal-actions">
+                <BSButton Color="BSColor.Light" @onclick="CloseJiraModal">Cancel</BSButton>
+                @if (jiraConnected)
+                {
+                    <BSButton Color="BSColor.Primary" @onclick="SendToJira" Disabled="@jiraSending">
+                        @(jiraSending ? "Sending…" : "Send to Jira")
+                    </BSButton>
+                }
+            </div>
+        </div>
+    </div>
+}
 @code {
     private List<Note> notes = new();
     private List<Note> filteredNotes = new();
@@ -655,10 +859,36 @@
     private System.Threading.Timer? _highlightTimer;
     private CancellationTokenSource _pollingCts = new();
 
+    // ── Export modal state ─────────────────────────────────────────────
+    private bool showExportModal;
+    private Note? exportNote;           // null = bulk mode
+    private bool exportIsBulk;
+    private string exportBulkProjectName = "";
+    private string? exportFeedback;
+    private bool exportFeedbackSuccess;
+
+    // ── Jira modal state ───────────────────────────────────────────────
+    // ── Jira modal state ───────────────────────────────────────────────
+    private bool showJiraModal;
+    private Note? jiraNote;
+    private string jiraSummary = "";
+    private string jiraBody = "";
+    private string jiraProjectKey = "";
+    private string jiraIssueTypeId = "";
+    private bool jiraSending;
+    private string? jiraErrorMessage;
+    private string? jiraSuccessUrl;
+    private bool jiraConnected;
+    private bool jiraCheckingStatus;
+    private List<JiraProject> jiraProjects = new();
+    private List<JiraIssueType> jiraIssueTypes = new();
+
     protected override async Task OnInitializedAsync()
     {
         await LoadData();
         _ = StartPollingAsync();
+
+        jiraConnected = await Svc.GetJiraStatusAsync();
     }
 
     private async Task LoadData()
@@ -788,7 +1018,6 @@
     {
         if (selectedNote == null || string.IsNullOrEmpty(noteType)) return;
         selectedNote.NoteTypeRaw = noteType;
-        // Ensure is_complete exists when upgrading to task/assignment
         if (noteType is "task" or "assignment")
             selectedNote.Metadata.IsComplete ??= false;
         selectedNote.InvalidateMetadataCache();
@@ -820,10 +1049,9 @@
 
     private async Task ConfirmDelete()
     {
-        if(selectedNote == null)
-            return;
+        if (selectedNote == null) return;
         var confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete \"{selectedNote.Title}\"? This cannot be undone.");
-        if(confirmed)
+        if (confirmed)
         {
             await Svc.DeleteNoteAsync(selectedNote.Id);
             selectedNote = null;
@@ -875,67 +1103,413 @@
         await LoadData();
     }
 
-    private async Task ExportNote(Note note)
+    // ── Export modal ───────────────────────────────────────────────────
+
+    private void OpenExportModal(Note? note, Project? project)
     {
-        var export = new
-        {
-            id = note.Id,
-            title = note.Title,
-            body = note.Body,
-            tags = note.Tags.Select(t => t.Name).ToList(),
-            group = note.Group?.Name,
-            metadata = note.Metadata,
-            photo_url = note.PhotoUrl,
-            created_at = note.CreatedAt,
-            updated_at = note.UpdatedAt
-        };
-
-        var json = JsonSerializer.Serialize(export, new JsonSerializerOptions { WriteIndented = true });
-        var filename = string.Concat(note.Title
-            .ToLower()
-            .Replace(" ", "-")
-            .Where(c => char.IsLetterOrDigit(c) || c == '-')) + ".json";
-
-        await JS.InvokeVoidAsync("downloadFile", filename, json);
+        exportNote = note;
+        exportIsBulk = note == null;
+        exportBulkProjectName = project?.Name ?? "";
+        exportFeedback = null;
+        exportFeedbackSuccess = false;
+        showExportModal = true;
     }
 
-    private async Task ExportAllNotes(Project project)
+    private void CloseExportModal()
     {
-        var export = new
+        showExportModal = false;
+        exportNote = null;
+        exportFeedback = null;
+    }
+
+    private async Task RunExport(string format)
+    {
+        exportFeedback = null;
+        var notesToExport = exportIsBulk ? filteredNotes : new List<Note> { exportNote! };
+        var baseName = exportIsBulk
+            ? Slugify(exportBulkProjectName)
+            : Slugify(exportNote!.Title);
+
+        try
         {
-            project = project.Name,
-            exported_at = DateTime.UtcNow,
-            notes = filteredNotes.Select(note => new
+            switch (format)
             {
-                id = note.Id,
-                title = note.Title,
-                body = note.Body,
-                tags = note.Tags.Select(t => t.Name).ToList(),
-                group = note.Group?.Name,
-                metadata = note.Metadata,
-                photo_url = note.PhotoUrl,
-                created_at = note.CreatedAt,
-                updated_at = note.UpdatedAt
-            }).ToList()
-        };
+                case "json":
+                    await ExportJson(notesToExport, baseName);
+                    break;
+                case "markdown":
+                    await ExportMarkdown(notesToExport, baseName);
+                    break;
+                case "csv":
+                    await ExportCsv(notesToExport, baseName);
+                    break;
+                case "pdf":
+                    await ExportPdf(notesToExport, baseName);
+                    break;
+                case "clipboard":
+                    await ExportClipboard(notesToExport);
+                    break;
+            }
+
+            if (format != "clipboard")
+            {
+                exportFeedbackSuccess = true;
+                exportFeedback = "✅ Download started.";
+            }
+        }
+        catch (Exception ex)
+        {
+            exportFeedbackSuccess = false;
+            exportFeedback = $"❌ Export failed: {ex.Message}";
+        }
+    }
+
+    private async Task ExportJson(List<Note> notesToExport, string baseName)
+    {
+        object export = exportIsBulk
+            ? (object)new
+            {
+                project = exportBulkProjectName,
+                exported_at = DateTime.UtcNow,
+                notes = notesToExport.Select(NoteToExportShape).ToList()
+            }
+            : NoteToExportShape(notesToExport[0]);
 
         var json = JsonSerializer.Serialize(export, new JsonSerializerOptions { WriteIndented = true });
-        var filename = string.Concat(project.Name
-            .ToLower()
-            .Replace(" ", "-")
-            .Where(c => char.IsLetterOrDigit(c) || c == '-')) + "-export.json";
+        await JS.InvokeVoidAsync("downloadFile", baseName + ".json", json, "application/json");
+    }
 
-        await JS.InvokeVoidAsync("downloadFile", filename, json);
+    private async Task ExportMarkdown(List<Note> notesToExport, string baseName)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        if (exportIsBulk)
+        {
+            sb.AppendLine($"# {exportBulkProjectName}");
+            sb.AppendLine($"*Exported {DateTime.Now:MMM d, yyyy}*");
+            sb.AppendLine();
+            foreach (var n in notesToExport)
+            {
+                sb.AppendLine($"## {n.Title}");
+                if (n.Tags.Any())
+                    sb.AppendLine($"*Tags: {string.Join(", ", n.Tags.Select(t => t.Name))}*");
+                if (n.Group != null)
+                    sb.AppendLine($"*Group: {n.Group.Name}*");
+                if (!string.IsNullOrEmpty(n.Metadata.DueDate))
+                    sb.AppendLine($"*Due: {n.Metadata.DueDate}*");
+                if (!string.IsNullOrEmpty(n.Metadata.Url))
+                    sb.AppendLine($"*URL: {n.Metadata.Url}*");
+                sb.AppendLine();
+                if (!string.IsNullOrEmpty(n.Body))
+                    sb.AppendLine(n.Body);
+                sb.AppendLine();
+                sb.AppendLine("---");
+                sb.AppendLine();
+            }
+        }
+        else
+        {
+            var n = notesToExport[0];
+            sb.AppendLine($"# {n.Title}");
+            if (n.Tags.Any())
+                sb.AppendLine($"*Tags: {string.Join(", ", n.Tags.Select(t => t.Name))}*");
+            if (n.Group != null)
+                sb.AppendLine($"*Group: {n.Group.Name}*");
+            if (!string.IsNullOrEmpty(n.Metadata.DueDate))
+                sb.AppendLine($"*Due: {n.Metadata.DueDate}*");
+            if (!string.IsNullOrEmpty(n.Metadata.Url))
+                sb.AppendLine($"*URL: {n.Metadata.Url}*");
+            sb.AppendLine();
+            if (!string.IsNullOrEmpty(n.Body))
+                sb.AppendLine(n.Body);
+        }
+
+        await JS.InvokeVoidAsync("downloadFile", baseName + ".md", sb.ToString(), "text/markdown");
+    }
+
+    private async Task ExportCsv(List<Note> notesToExport, string baseName)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("title,body,group,tags,due_date,url,language,status,is_complete,created_at,updated_at");
+
+        foreach (var n in notesToExport)
+        {
+            sb.AppendLine(string.Join(",", new[]
+            {
+                CsvEscape(n.Title),
+                CsvEscape(n.Body ?? ""),
+                CsvEscape(n.Group?.Name ?? ""),
+                CsvEscape(string.Join("|", n.Tags.Select(t => t.Name))),
+                CsvEscape(n.Metadata.DueDate ?? ""),
+                CsvEscape(n.Metadata.Url ?? ""),
+                CsvEscape(n.Metadata.Language ?? ""),
+                CsvEscape(n.Metadata.Status ?? ""),
+                CsvEscape(n.Metadata.IsComplete?.ToString() ?? ""),
+                CsvEscape(n.CreatedAt.ToString("o")),
+                CsvEscape(n.UpdatedAt.ToString("o"))
+            }));
+        }
+
+        await JS.InvokeVoidAsync("downloadFile", baseName + ".csv", sb.ToString(), "text/csv");
+    }
+
+    private async Task ExportPdf(List<Note> notesToExport, string baseName)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(@"<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         margin: 0; padding: 32px; color: #1e293b; background: #fff; }
+  .nk-header { display: flex; align-items: center; gap: 10px;
+                border-bottom: 2px solid #6366f1; padding-bottom: 12px; margin-bottom: 24px; }
+  .nk-brand { font-size: 20px; font-weight: 700; color: #6366f1; }
+  .nk-export-date { font-size: 12px; color: #94a3b8; margin-left: auto; }
+  .nk-note { border: 1px solid #e2e8f0; border-radius: 10px;
+              padding: 20px; margin-bottom: 20px; page-break-inside: avoid; }
+  .nk-note-title { font-size: 17px; font-weight: 700; color: #1e293b; margin: 0 0 8px; }
+  .nk-meta { font-size: 12px; color: #94a3b8; margin-bottom: 10px; }
+  .nk-tag { display: inline-block; background: #ede9fe; color: #6d28d9;
+             padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-right: 4px; }
+  .nk-body { font-size: 14px; color: #475569; line-height: 1.6;
+              white-space: pre-wrap; margin-top: 10px; }
+  .nk-field { font-size: 12px; color: #64748b; margin-top: 6px; }
+  .nk-group-dot { display: inline-block; width: 8px; height: 8px;
+                   border-radius: 50%; margin-right: 4px; background: #6366f1; }
+  @media print { body { padding: 16px; } }
+</style>
+</head>
+<body>");
+
+        sb.Append($@"
+<div class='nk-header'>
+  <span class='nk-brand'>📋 NoteKeeper</span>
+  {(exportIsBulk ? $"<span style='font-size:14px;color:#475569;'>{System.Net.WebUtility.HtmlEncode(exportBulkProjectName)}</span>" : "")}
+  <span class='nk-export-date'>Exported {DateTime.Now:MMM d, yyyy}</span>
+</div>");
+
+        foreach (var n in notesToExport)
+        {
+            var groupColor = n.Group?.Color ?? "#6366f1";
+            sb.Append($@"
+<div class='nk-note'>
+  <div class='nk-note-title'>{System.Net.WebUtility.HtmlEncode(n.Title)}</div>
+  <div class='nk-meta'>");
+
+            if (n.Group != null)
+                sb.Append($"<span><span class='nk-group-dot' style='background:{groupColor}'></span>{System.Net.WebUtility.HtmlEncode(n.Group.Name)}</span> &nbsp;");
+
+            foreach (var tag in n.Tags)
+                sb.Append($"<span class='nk-tag'>{System.Net.WebUtility.HtmlEncode(tag.Name)}</span>");
+
+            sb.Append($"<br><span>{n.UpdatedAt.ToLocalTime():MMM d, yyyy}</span>");
+            sb.Append("</div>");
+
+            if (!string.IsNullOrEmpty(n.Metadata.DueDate))
+                sb.Append($"<div class='nk-field'>📅 Due: {System.Net.WebUtility.HtmlEncode(n.Metadata.DueDate)}</div>");
+            if (!string.IsNullOrEmpty(n.Metadata.Url))
+                sb.Append($"<div class='nk-field'>🔗 {System.Net.WebUtility.HtmlEncode(n.Metadata.Url)}</div>");
+            if (!string.IsNullOrEmpty(n.Metadata.Language))
+                sb.Append($"<div class='nk-field'>💻 {System.Net.WebUtility.HtmlEncode(n.Metadata.Language)}</div>");
+            if (!string.IsNullOrEmpty(n.Metadata.Status))
+                sb.Append($"<div class='nk-field'>⚡ {System.Net.WebUtility.HtmlEncode(n.Metadata.Status)}</div>");
+            if (n.Metadata.IsComplete.HasValue)
+                sb.Append($"<div class='nk-field'>{(n.Metadata.IsComplete.Value ? "✅ Complete" : "⬜ Incomplete")}</div>");
+
+            if (!string.IsNullOrEmpty(n.Body))
+                sb.Append($"<div class='nk-body'>{System.Net.WebUtility.HtmlEncode(n.Body)}</div>");
+
+            sb.Append("</div>");
+        }
+
+        sb.Append("</body></html>");
+        await JS.InvokeVoidAsync("printAsPdf", sb.ToString());
+
+        exportFeedbackSuccess = true;
+        exportFeedback = "✅ Print dialog opened — choose 'Save as PDF'.";
+    }
+
+    private async Task ExportClipboard(List<Note> notesToExport)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        foreach (var n in notesToExport)
+        {
+            sb.AppendLine(n.Title);
+            if (!string.IsNullOrEmpty(n.Body))
+                sb.AppendLine(n.Body);
+            if (n.Tags.Any())
+                sb.AppendLine($"Tags: {string.Join(", ", n.Tags.Select(t => t.Name))}");
+            if (!string.IsNullOrEmpty(n.Metadata.DueDate))
+                sb.AppendLine($"Due: {n.Metadata.DueDate}");
+            if (!string.IsNullOrEmpty(n.Metadata.Url))
+                sb.AppendLine(n.Metadata.Url);
+            if (notesToExport.Count > 1)
+                sb.AppendLine();
+        }
+
+        await JS.InvokeVoidAsync("copyToClipboard", sb.ToString().Trim());
+        exportFeedbackSuccess = true;
+        exportFeedback = "✅ Copied to clipboard.";
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────
+
+    private static object NoteToExportShape(Note note) => new
+    {
+        id = note.Id,
+        title = note.Title,
+        body = note.Body,
+        tags = note.Tags.Select(t => t.Name).ToList(),
+        group = note.Group?.Name,
+        metadata = note.Metadata,
+        photo_url = note.PhotoUrl,
+        created_at = note.CreatedAt,
+        updated_at = note.UpdatedAt
+    };
+
+    private static string Slugify(string s) =>
+        string.Concat(s.ToLower().Replace(" ", "-")
+            .Where(c => char.IsLetterOrDigit(c) || c == '-'));
+
+    private static string CsvEscape(string s)
+    {
+        if (s.Contains(',') || s.Contains('"') || s.Contains('\n'))
+            return $"\"{s.Replace("\"", "\"\"")}\"";
+        return s;
     }
 
     private static string Truncate(string s, int len) =>
         s.Length <= len ? s : s[..len] + "…";
 
+    // ── Jira ───────────────────────────────────────────────────────────
+
+    private async Task OpenJiraModal(Note note)
+    {
+        jiraNote = note;
+        jiraSummary = note.Title;
+        jiraBody = note.Body ?? "";
+        jiraIssueTypeId = "";
+        jiraErrorMessage = null;
+        jiraSuccessUrl = null;
+        jiraSending = false;
+        jiraProjects = new();
+        jiraIssueTypes = new();
+        showJiraModal = true;
+
+        if (jiraConnected)
+        {
+            jiraCheckingStatus = true;
+            StateHasChanged();
+            try
+            {
+                jiraProjects = await Svc.GetJiraProjectsAsync();
+                if (jiraProjects.Any())
+                {
+                    jiraProjectKey = jiraProjects[0].Key;
+                    jiraIssueTypes = await Svc.GetJiraIssueTypesAsync(jiraProjectKey);
+                    if (jiraIssueTypes.Any()) jiraIssueTypeId = jiraIssueTypes[0].Id;
+                }
+            }
+            catch { jiraErrorMessage = "Failed to load Jira projects."; }
+            jiraCheckingStatus = false;
+        }
+    }
+
+    private async Task OnJiraProjectChanged(string? key)
+    {
+        if (string.IsNullOrEmpty(key)) return;
+        jiraProjectKey = key;
+        jiraIssueTypes = new();
+        jiraIssueTypeId = "";
+        try
+        {
+            jiraIssueTypes = await Svc.GetJiraIssueTypesAsync(jiraProjectKey);
+            if (jiraIssueTypes.Any()) jiraIssueTypeId = jiraIssueTypes[0].Id;
+        }
+        catch { jiraErrorMessage = "Failed to load issue types."; }
+        StateHasChanged();
+    }
+
+    private void CloseJiraModal()
+    {
+        showJiraModal = false;
+        jiraNote = null;
+        jiraErrorMessage = null;
+        jiraSuccessUrl = null;
+    }
+
+    private async Task SendToJira()
+    {
+        if (!jiraConnected)
+        {
+            jiraErrorMessage = "Not connected to Jira. Please connect first.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(jiraProjectKey))
+        {
+            jiraErrorMessage = "Please select a project.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(jiraIssueTypeId))
+        {
+            jiraErrorMessage = "Please select an issue type.";
+            return;
+        }
+
+        jiraSending = true;
+        jiraErrorMessage = null;
+        jiraSuccessUrl = null;
+
+        var issueKey = await Svc.CreateJiraIssueAsync(
+            jiraProjectKey,
+            jiraIssueTypeId,
+            jiraSummary,
+            string.IsNullOrWhiteSpace(jiraBody) ? null : jiraBody);
+
+        jiraSending = false;
+
+        if (issueKey != null)
+        {
+            jiraSuccessUrl = $"https://cglock84.atlassian.net/browse/{issueKey}";
+            ShowToast($"Jira issue {issueKey} created ✓");
+        }
+        else
+        {
+            jiraErrorMessage = "Failed to create issue. Check proxy logs.";
+        }
+    }
+
+    private async Task PollForJiraConnection()
+    {
+        // Poll every 2s for up to 2 minutes waiting for OAuth callback
+        for (int i = 0; i < 60; i++)
+        {
+            await Task.Delay(2000);
+            jiraConnected = await Svc.GetJiraStatusAsync();
+            if (jiraConnected)
+            {
+                jiraProjects = await Svc.GetJiraProjectsAsync();
+                if (jiraProjects.Any())
+                {
+                    jiraProjectKey = jiraProjects[0].Key;
+                    jiraIssueTypes = await Svc.GetJiraIssueTypesAsync(jiraProjectKey);
+                    if (jiraIssueTypes.Any()) jiraIssueTypeId = jiraIssueTypes[0].Id;
+                }
+                StateHasChanged();
+                break;
+            }
+        }
+    }
+
+    // ── Note lifecycle ─────────────────────────────────────────────────
+
     private async Task ToggleComplete(Note note)
     {
         var metadata = note.Metadata;
         metadata.IsComplete = !(metadata.IsComplete ?? false);
-        //note.InvalidateMetadataCache();
         await Svc.UpdateNoteMetadataAsync(note.Id, metadata);
         await LoadData();
     }
@@ -950,7 +1524,6 @@
     private async Task SaveTitle()
     {
         if (selectedNote == null) return;
-        //selectedNote.Title = value ?? string.Empty;
         try
         {
             Console.WriteLine($"Saving title: {selectedNote.Title}");
@@ -959,7 +1532,6 @@
             var idx = notes.FindIndex(n => n.Id == selectedNote.Id);
             if (idx >= 0) notes[idx] = selectedNote;
             ApplyFilters();
-            //StateHasChanged();
         }
         catch (Exception ex)
         {
@@ -978,12 +1550,10 @@
             case MetaField.Status:   selectedNote.Metadata.Status = value; break;
             case MetaField.DueDate:  selectedNote.Metadata.DueDate = value; break;
         }
-        //selectedNote.InvalidateMetadataCache();
         await Svc.UpdateNoteMetadataAsync(selectedNote.Id, selectedNote.Metadata);
         await LoadData();
     }
 
-    // Shared due date fragment for task/assignment cards
     private RenderFragment NoteTypeDueDateFragment(Note note) => __builder =>
     {
         if (note.NoteType == NoteType.Assignment && !string.IsNullOrEmpty(note.Metadata.DueDate))
@@ -1008,7 +1578,6 @@
     {
         group.IsPublic = !group.IsPublic;
         await Svc.SetGroupPublicAsync(group.Id, group.IsPublic);
-        // No full reload needed — we already mutated the local object
         StateHasChanged();
     }
 

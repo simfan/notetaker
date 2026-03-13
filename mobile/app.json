@@ -1,5 +1,19 @@
 {
-  "plugins": [
-    "@react-native-community/datetimepicker"
-  ]
+  "expo": {
+    "name": "NoteKeeper",
+    "slug": "notetaker-mobile",
+    "scheme": "notetaker",
+    "plugins": [
+      "@react-native-community/datetimepicker",
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d2d4ec18-597a-4ae3-9861-90cb56fec2aa"
+      }
+    },
+    "android": {
+      "package": "com.cglock84.notetakermobile"
+    }
+  }
 }

@@ -7,6 +7,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Note, Tag } from '../types';
 import { fetchNotes, deleteNote, updateNote } from '../services/notesService';
+import { supabase } from '../services/supabase';
 
 export default function NoteListScreen() {
   const navigation = useNavigation<any>();
@@ -56,10 +57,19 @@ export default function NoteListScreen() {
     ]);
   };
 
+  const handleLogout = () => {
+    Alert.alert('Log Out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Log Out', style: 'destructive', onPress: async () => {
+        await supabase.auth.signOut();
+        // App.tsx onAuthStateChange will handle navigation automatically
+      }},
+    ]);
+  };
+
   const handleToggleComplete = async (note: Note) => {
     const current = note.note_metadata?.is_complete ?? false;
     const updatedMetadata = { ...note.note_metadata, is_complete: !current };
-    // Optimistically update local state
     setNotes(prev =>
       prev.map(n => n.id === note.id ? { ...n, note_metadata: updatedMetadata } : n)
     );
@@ -67,7 +77,7 @@ export default function NoteListScreen() {
       await updateNote(note.id, { note_metadata: updatedMetadata });
     } catch (e: any) {
       Alert.alert('Error', e.message);
-      load(); // revert on failure
+      load();
     }
   };
 
@@ -103,7 +113,6 @@ export default function NoteListScreen() {
         )}
 
         <View style={styles.cardBody}>
-          {/* Title row — with checkbox for tasks/assignments */}
           <View style={styles.titleRow}>
             {isTask && (
               <TouchableOpacity
@@ -135,7 +144,6 @@ export default function NoteListScreen() {
             </Text>
           ) : null}
 
-          {/* Due date row — assignments only */}
           {isAssignment && dueDate && (
             <View style={styles.dueDateRow}>
               <Ionicons
@@ -172,9 +180,17 @@ export default function NoteListScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>NoteKeeper</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('TagManager')}>
-          <Ionicons name="pricetags-outline" size={24} color="#6366f1" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('TagManager')}
+            style={styles.headerBtn}
+          >
+            <Ionicons name="pricetags-outline" size={24} color="#6366f1" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout} style={styles.headerBtn}>
+            <Ionicons name="log-out-outline" size={24} color="#94a3b8" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search */}
@@ -253,6 +269,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
   },
   headerTitle: { fontSize: 24, fontWeight: '700', color: '#1e293b', letterSpacing: -0.5 },
+  headerActions: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+  },
+  headerBtn: {
+    padding: 4,
+  },
   searchRow: {
     flexDirection: 'row', alignItems: 'center',
     margin: 16, paddingHorizontal: 14, paddingVertical: 10,
@@ -266,41 +288,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#f1f5f9', marginRight: 8,
   },
   filterChipText: { fontSize: 13, fontWeight: '500', color: '#475569' },
-
-  // Cards
   card: {
     backgroundColor: '#fff', borderRadius: 16, marginBottom: 12,
     overflow: 'hidden',
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
-  cardComplete: {
-    opacity: 0.6,
-  },
+  cardComplete: { opacity: 0.6 },
   cardPhoto: { width: '100%', height: 160, resizeMode: 'cover' },
   cardBody: { padding: 14 },
-
   titleRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4,
   },
   checkbox: { marginTop: 1 },
   cardTitle: { flex: 1, fontSize: 16, fontWeight: '600', color: '#1e293b' },
-  cardTitleComplete: {
-    textDecorationLine: 'line-through', color: '#94a3b8',
-  },
+  cardTitleComplete: { textDecorationLine: 'line-through', color: '#94a3b8' },
   cardPreview: { fontSize: 14, color: '#64748b', lineHeight: 20, marginBottom: 8 },
   cardPreviewComplete: { color: '#94a3b8' },
-
   dueDateRow: {
     flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8,
   },
   dueDateText: { fontSize: 12, color: '#94a3b8', fontWeight: '500' },
   dueDateOverdue: { color: '#ef4444', fontWeight: '600' },
-
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
   tag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   tagText: { fontSize: 11, fontWeight: '600' },
   cardDate: { fontSize: 11, color: '#94a3b8' },
-
   empty: { alignItems: 'center', paddingTop: 80 },
   emptyText: { color: '#94a3b8', marginTop: 12, fontSize: 16 },
   fab: {

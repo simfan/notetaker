@@ -1,0 +1,30 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>Signing in…</title>
+</head>
+<body>
+    <p style="font-family:sans-serif;text-align:center;margin-top:40px;color:#64748b;">
+        Signing you in…
+    </p>
+    <script>
+    // This page is opened in a popup by the OAuth flow.
+    // The parent window's interval will detect the token in this URL and close us.
+    // As a fallback, also try to notify the opener directly.
+    try {
+      var hash = window.location.hash;
+      if (hash && window.opener) {
+        var params = new URLSearchParams(hash.substring(1));
+        var accessToken = params.get('access_token');
+        var refreshToken = params.get('refresh_token');
+        if (accessToken && window.opener.onOAuthCallback) {
+          window.opener.onOAuthCallback(accessToken, refreshToken);
+          window.close();
+        }
+      }
+    } catch(e) {
+        document.body.innerHTML += '<p style="color:red">Error: ' + e.message + '</p>';
+}
+    </script>
+</body>
+</html>

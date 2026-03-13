@@ -1,16 +1,48 @@
-﻿@using BlazorStrap
-@using NoteManager.Layout
+﻿@inject AuthService Auth
+@inject NavigationManager Nav
 
-<BSThemeProvider />
-<Router AppAssembly="@typeof(App).Assembly">
-    <Found Context="routeData">
-        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
-        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
-    </Found>
-    <NotFound>
-        <PageTitle>Not found</PageTitle>
-        <LayoutView Layout="@typeof(MainLayout)">
-            <p>Sorry, nothing at this address.</p>
-        </LayoutView>
-    </NotFound>
-</Router>
+@if (!_initialized)
+{
+    <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f8fafc;">
+        <p style="color:#94a3b8;font-size:16px;">Loading…</p>
+    </div>
+}
+else
+{
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <PageTitle>Not found</PageTitle>
+            <LayoutView Layout="@typeof(MainLayout)">
+                <p role="alert">Sorry, there's nothing at this address.</p>
+            </LayoutView>
+        </NotFound>
+    </Router>
+}
+
+@code {
+    private bool _initialized = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var currentPath = new Uri(Nav.Uri).AbsolutePath;
+
+        // Allow auth routes through without session check
+        if (currentPath.StartsWith("/login") || currentPath.StartsWith("/auth/callback"))
+        {
+            _initialized = true;
+            return;
+        }
+
+        var hasSession = await Auth.TryRestoreSessionAsync();
+        if (!hasSession)
+        {
+            Nav.NavigateTo("/login", forceLoad: false);
+        }
+
+        _initialized = true;
+    }
+}

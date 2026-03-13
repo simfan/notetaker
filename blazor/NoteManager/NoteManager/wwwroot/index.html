@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,7 +12,6 @@
     <link href="NoteManager.styles.css" rel="stylesheet" />
     <script type="importmap"></script>
 </head>
-
 <body>
     <div id="app">
         <svg class="loading-progress">
@@ -22,7 +20,6 @@
         </svg>
         <div class="loading-progress-text"></div>
     </div>
-
     <div id="blazor-error-ui">
         An unhandled error has occurred.
         <a href="." class="reload">Reload</a>
@@ -30,8 +27,10 @@
     </div>
     <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
     <script>
-        function downloadFile(filename, content) {
-            const blob = new Blob([content], { type: 'application/json' });
+        // ── Generic file download (accepts mime type) ──────────────────────
+        function downloadFile(filename, content, mimeType) {
+            const type = mimeType || 'application/json';
+            const blob = new Blob([content], { type });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -39,7 +38,65 @@
             a.click();
             URL.revokeObjectURL(url);
         }
+
+        // ── Copy plain text to clipboard ───────────────────────────────────
+        function copyToClipboard(text) {
+            return navigator.clipboard.writeText(text);
+        }
+
+        // ── PDF export via styled iframe + print dialog ────────────────────
+        function printAsPdf(htmlContent) {
+            // Remove any existing print frame
+            const existing = document.getElementById('nk-print-frame');
+            if (existing) existing.remove();
+
+            const iframe = document.createElement('iframe');
+            iframe.id = 'nk-print-frame';
+            iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:800px;height:600px;border:none;';
+            document.body.appendChild(iframe);
+
+            const doc = iframe.contentWindow.document;
+            doc.open();
+            doc.write(htmlContent);
+            doc.close();
+
+            // Wait for content + fonts to load before printing
+            iframe.onload = function () {
+                setTimeout(function () {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                }, 300);
+            };
+        }
+    </script>
+    <script>
+        window.openOAuthPopup = function (url, dotNetHelper) {
+            var popup = window.open(url, 'oauth_popup', 'width=600,height=700,scrollbars=yes');
+
+            // Direct callback from the popup page
+            window.onOAuthCallback = function (accessToken, refreshToken) {
+                dotNetHelper.invokeMethodAsync('OnOAuthComplete', accessToken, refreshToken);
+            };
+
+            // Fallback interval in case direct callback doesn't fire
+            var interval = setInterval(function () {
+                if (!popup || popup.closed) {
+                    clearInterval(interval);
+                    return;
+                }
+                try {
+                    var hash = popup.location.hash;
+                    if (hash && hash.includes('access_token')) {
+                        clearInterval(interval);
+                        popup.close();
+                        var params = new URLSearchParams(hash.substring(1));
+                        dotNetHelper.invokeMethodAsync('OnOAuthComplete',
+                            params.get('access_token'),
+                            params.get('refresh_token'));
+                    }
+                } catch (e) { }
+            }, 300);
+        };
     </script>
 </body>
-
 </html>

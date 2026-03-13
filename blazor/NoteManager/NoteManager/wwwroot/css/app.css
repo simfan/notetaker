@@ -1006,3 +1006,246 @@ html, body {
     .copy-btn:hover {
         background: #dcfce7;
     }
+
+/* Settings page */
+.settings-page {
+    max-width: 600px;
+    margin: 40px auto;
+    padding: 0 24px;
+}
+
+.settings-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 24px;
+}
+
+.settings-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.settings-section-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 4px;
+}
+
+.settings-hint {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-bottom: 16px;
+}
+
+    .settings-hint a {
+        color: #6366f1;
+    }
+
+.settings-field {
+    margin-bottom: 14px;
+}
+
+.settings-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: #475569;
+    margin-bottom: 5px;
+}
+
+.settings-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.settings-input--inline {
+    width: auto;
+    flex: 1;
+}
+
+.settings-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+}
+
+.settings-btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+}
+
+.settings-btn--primary {
+    background: #6366f1;
+    color: #fff;
+}
+
+    .settings-btn--primary:hover {
+        background: #4f46e5;
+    }
+
+.settings-btn--ghost {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+}
+
+    .settings-btn--ghost:hover {
+        background: #e2e8f0;
+    }
+
+.settings-feedback {
+    margin-top: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.feedback--success {
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+}
+
+.feedback--error {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
+
+/* Project key list */
+.settings-key-list {
+    margin-bottom: 12px;
+}
+
+.settings-key-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.settings-key-badge {
+    background: #ede9fe;
+    color: #6d28d9;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: monospace;
+}
+
+.settings-key-remove {
+    background: none;
+    border: none;
+    color: #ef4444;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+    .settings-key-remove:hover {
+        background: #fee2e2;
+    }
+
+.settings-key-add {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Gear icon in header */
+.layout-header {
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    z-index: 100;
+}
+
+.settings-gear {
+    font-size: 20px;
+    text-decoration: none;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+}
+
+    .settings-gear:hover {
+        opacity: 1;
+    }
+
+/* Jira export button */
+.note-export-btn--jira {
+    background: #eff6ff;
+    color: #2563eb;
+    border-color: #bfdbfe;
+}
+
+    .note-export-btn--jira:hover {
+        background: #dbeafe;
+    }
+
+.note-card-export-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+}
+/* ?? Export format modal ??????????????????????????????????????????? */
+.export-modal-subtitle {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 16px;
+}
+
+.export-format-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.export-format-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 14px 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+    .export-format-btn:hover {
+        background: #ede9fe;
+        border-color: #a78bfa;
+    }
+
+.export-format-icon {
+    font-size: 22px;
+}
+
+.export-format-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.export-format-desc {
+    font-size: 11px;
+    color: #94a3b8;
+}

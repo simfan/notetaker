@@ -5,24 +5,38 @@ using NoteManager.Models;
 
 namespace NoteManager.Services;
 
-
 public class SupabaseService
 {
     private readonly HttpClient _http;
     private readonly IConfiguration _config;
+    private readonly AuthService _auth;
     private readonly string _supabaseUrl;
-    public SupabaseService(HttpClient http, IConfiguration config)
+    private readonly string _anonKey;
+    private readonly string _jiraProxyBase;
+
+
+    public SupabaseService(HttpClient http, IConfiguration config, AuthService auth)
     {
         _http = http;
         _config = config;
-        _supabaseUrl = _config.GetSection("Supabase").GetValue<string>("Url");
-        var AnonKey = _config.GetSection("Supabase").GetValue<string>("AnonKey");
-        //var SupabaseUrl = _config.GetSection("Supabase").GetValue<string>("Url");
-       // var AnonKey = _config.GetSection("Supabase").GetValue<string>("AnonKey");
+        _auth = auth;
+        _supabaseUrl = _config.GetSection("Supabase").GetValue<string>("Url")!.TrimEnd('/');
+        _anonKey = _config.GetSection("Supabase").GetValue<string>("AnonKey")!;
+        _jiraProxyBase = config["JiraProxy:BaseUrl"] ?? "http://localhost:5100";
+        // No BaseAddress set here — full URLs used per-request to avoid conflict with AuthService
+    }
 
-        _http.BaseAddress = new Uri(_supabaseUrl);
-        _http.DefaultRequestHeaders.Add("apikey", AnonKey);
-        _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {AnonKey}");
+    // ── Auth helpers ─────────────────────────────────────────
+
+    private string BearerToken => _auth.IsAuthenticated ? _auth.Session!.AccessToken : _anonKey;
+    private string UserId => _auth.UserId ?? throw new InvalidOperationException("Not authenticated");
+
+    private HttpRequestMessage Req(HttpMethod method, string path, HttpContent? content = null)
+    {
+        var req = new HttpRequestMessage(method, _supabaseUrl + path) { Content = content };
+        req.Headers.Add("apikey", _anonKey);
+        req.Headers.Add("Authorization", $"Bearer {BearerToken}");
+        return req;
     }
 
     // ── Notes ────────────────────────────────────────────────
@@ -37,7 +51,9 @@ public class SupabaseService
         if (!string.IsNullOrWhiteSpace(groupId))
             url += $"&group_id=eq.{groupId}";
 
-        var raw = await _http.GetFromJsonAsync<List<JsonElement>>(url) ?? new();
+        var res = await _http.SendAsync(Req(HttpMethod.Get, url));
+        res.EnsureSuccessStatusCode();
+        var raw = await res.Content.ReadFromJsonAsync<List<JsonElement>>() ?? new();
         var notes = raw.Select(MapNote).ToList();
 
         if (!string.IsNullOrWhiteSpace(tagId))
@@ -60,53 +76,62 @@ public class SupabaseService
             updated_at = DateTime.UtcNow
         };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var res = await _http.PatchAsync($"/rest/v1/notes?id=eq.{note.Id}", content);
+        var res = await _http.SendAsync(Req(HttpMethod.Patch, $"/rest/v1/notes?id=eq.{note.Id}", content));
         res.EnsureSuccessStatusCode();
     }
 
     public async Task DeleteNoteAsync(string id)
     {
-        await _http.DeleteAsync($"/rest/v1/notes?id=eq.{id}");
+        await _http.SendAsync(Req(HttpMethod.Delete, $"/rest/v1/notes?id=eq.{id}"));
     }
 
     public async Task SetNoteTagsAsync(string noteId, List<string> tagIds)
     {
-        await _http.DeleteAsync($"/rest/v1/note_tags?note_id=eq.{noteId}");
+        await _http.SendAsync(Req(HttpMethod.Delete, $"/rest/v1/note_tags?note_id=eq.{noteId}"));
         if (tagIds.Count > 0)
         {
             var rows = tagIds.Select(tid => new { note_id = noteId, tag_id = tid });
             var content = new StringContent(JsonSerializer.Serialize(rows), Encoding.UTF8, "application/json");
-            await _http.PostAsync("/rest/v1/note_tags", content);
+            await _http.SendAsync(Req(HttpMethod.Post, "/rest/v1/note_tags", content));
         }
     }
 
     // ── Groups ───────────────────────────────────────────────
 
     public async Task<List<Group>> GetGroupsAsync()
-        => await _http.GetFromJsonAsync<List<Group>>("/rest/v1/groups?select=*&order=name") ?? new();
+    {
+        var res = await _http.SendAsync(Req(HttpMethod.Get, "/rest/v1/groups?select=*&order=name"));
+        res.EnsureSuccessStatusCode();
+        return await res.Content.ReadFromJsonAsync<List<Group>>() ?? new();
+    }
 
     public async Task CreateGroupAsync(string name, string color, string templateType = "standard")
     {
-        var userId = "00000000-0000-0000-0000-000000000000";
-        var payload = new { user_id = userId, name, color, template_type = templateType };
+        var payload = new { user_id = UserId, name, color, template_type = templateType };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var res = await _http.PostAsync("/rest/v1/groups", content);
+        var res = await _http.SendAsync(Req(HttpMethod.Post, "/rest/v1/groups", content));
         res.EnsureSuccessStatusCode();
     }
 
     public async Task DeleteGroupAsync(string id)
-        => await _http.DeleteAsync($"/rest/v1/groups?id=eq.{id}");
+    {
+        await _http.SendAsync(Req(HttpMethod.Delete, $"/rest/v1/groups?id=eq.{id}"));
+    }
 
     // ── Tags ─────────────────────────────────────────────────
 
     public async Task<List<Tag>> GetTagsAsync()
-        => await _http.GetFromJsonAsync<List<Tag>>("/rest/v1/tags?select=*&order=name") ?? new();
+    {
+        var res = await _http.SendAsync(Req(HttpMethod.Get, "/rest/v1/tags?select=*&order=name"));
+        res.EnsureSuccessStatusCode();
+        return await res.Content.ReadFromJsonAsync<List<Tag>>() ?? new();
+    }
 
     public async Task<Tag> CreateTagAsync(string name, string color)
     {
-        var payload = new { name, color, user_id = "00000000-0000-0000-0000-000000000000" };
+        var payload = new { name, color, user_id = UserId };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var req = new HttpRequestMessage(HttpMethod.Post, "/rest/v1/tags") { Content = content };
+        var req = Req(HttpMethod.Post, "/rest/v1/tags", content);
         req.Headers.Add("Prefer", "return=representation");
         var res = await _http.SendAsync(req);
         res.EnsureSuccessStatusCode();
@@ -115,7 +140,9 @@ public class SupabaseService
     }
 
     public async Task DeleteTagAsync(string id)
-        => await _http.DeleteAsync($"/rest/v1/tags?id=eq.{id}");
+    {
+        await _http.SendAsync(Req(HttpMethod.Delete, $"/rest/v1/tags?id=eq.{id}"));
+    }
 
     // ── Mapping ──────────────────────────────────────────────
 
@@ -175,8 +202,10 @@ public class SupabaseService
 
     public async Task<List<TagGroupRule>> GetRulesAsync()
     {
-        var raw = await _http.GetFromJsonAsync<List<JsonElement>>(
-            "/rest/v1/tag_group_rules?select=*,tag:tags(*),group:groups(*)&order=priority.asc") ?? new();
+        var res = await _http.SendAsync(Req(HttpMethod.Get,
+            "/rest/v1/tag_group_rules?select=*,tag:tags(*),group:groups(*)&order=priority.asc"));
+        res.EnsureSuccessStatusCode();
+        var raw = await res.Content.ReadFromJsonAsync<List<JsonElement>>() ?? new();
 
         return raw.Select(r => new TagGroupRule
         {
@@ -196,21 +225,22 @@ public class SupabaseService
 
     public async Task CreateRuleAsync(string tagId, string groupId, int priority)
     {
-        var userId = "00000000-0000-0000-0000-000000000000";
-        var payload = new { user_id = userId, tag_id = tagId, group_id = groupId, priority };
+        var payload = new { user_id = UserId, tag_id = tagId, group_id = groupId, priority };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var res = await _http.PostAsync("/rest/v1/tag_group_rules", content);
+        var res = await _http.SendAsync(Req(HttpMethod.Post, "/rest/v1/tag_group_rules", content));
         res.EnsureSuccessStatusCode();
     }
 
     public async Task DeleteRuleAsync(string ruleId)
-        => await _http.DeleteAsync($"/rest/v1/tag_group_rules?id=eq.{ruleId}");
+    {
+        await _http.SendAsync(Req(HttpMethod.Delete, $"/rest/v1/tag_group_rules?id=eq.{ruleId}"));
+    }
 
     public async Task UpdateRulePriorityAsync(string ruleId, int priority)
     {
         var payload = new { priority };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        await _http.PatchAsync($"/rest/v1/tag_group_rules?id=eq.{ruleId}", content);
+        await _http.SendAsync(Req(HttpMethod.Patch, $"/rest/v1/tag_group_rules?id=eq.{ruleId}", content));
     }
 
     public async Task<string?> ApplyRulesAsync(List<string> tagIds)
@@ -229,7 +259,7 @@ public class SupabaseService
             updated_at = DateTime.UtcNow
         };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var res = await _http.PatchAsync($"/rest/v1/notes?id=eq.{noteId}", content);
+        var res = await _http.SendAsync(Req(HttpMethod.Patch, $"/rest/v1/notes?id=eq.{noteId}", content));
         res.EnsureSuccessStatusCode();
     }
 
@@ -237,16 +267,18 @@ public class SupabaseService
     {
         var payload = new { note_type = noteType, updated_at = DateTime.UtcNow };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var res = await _http.PatchAsync($"/rest/v1/notes?id=eq.{noteId}", content);
+        var res = await _http.SendAsync(Req(HttpMethod.Patch, $"/rest/v1/notes?id=eq.{noteId}", content));
         res.EnsureSuccessStatusCode();
     }
 
-    // ── Projects CRUD ────────────────────────────────────────────
+    // ── Projects ─────────────────────────────────────────────
 
     public async Task<List<Project>> GetProjectsAsync()
     {
-        var raw = await _http.GetFromJsonAsync<List<JsonElement>>(
-            "/rest/v1/projects?select=*,tag:tags(*)&order=name.asc") ?? new();
+        var res = await _http.SendAsync(Req(HttpMethod.Get,
+            "/rest/v1/projects?select=*,tag:tags(*)&order=name.asc"));
+        res.EnsureSuccessStatusCode();
+        var raw = await res.Content.ReadFromJsonAsync<List<JsonElement>>() ?? new();
 
         return raw.Select(r => new Project
         {
@@ -254,43 +286,150 @@ public class SupabaseService
             UserId = r.GetProperty("user_id").GetString() ?? "",
             Name = r.GetProperty("name").GetString() ?? "",
             TagId = r.TryGetProperty("tag_id", out var tid) && tid.ValueKind != JsonValueKind.Null
-                            ? tid.GetString() : null,
+                        ? tid.GetString() : null,
             CreatedAt = r.GetProperty("created_at").GetDateTime(),
             Tag = r.TryGetProperty("tag", out var t) && t.ValueKind != JsonValueKind.Null
-                            ? JsonSerializer.Deserialize<Tag>(t.GetRawText(),
-                                  new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-                            : null
+                        ? JsonSerializer.Deserialize<Tag>(t.GetRawText(),
+                              new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                        : null
         }).ToList();
     }
 
     public async Task CreateProjectAsync(string name, string? tagId)
     {
-        var userId = "00000000-0000-0000-0000-000000000000";
-        var payload = new { user_id = userId, name, tag_id = tagId };
+        var payload = new { user_id = UserId, name, tag_id = tagId };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var res = await _http.PostAsync("/rest/v1/projects", content);
+        var res = await _http.SendAsync(Req(HttpMethod.Post, "/rest/v1/projects", content));
         res.EnsureSuccessStatusCode();
     }
 
     public async Task DeleteProjectAsync(string projectId)
-        => await _http.DeleteAsync($"/rest/v1/projects?id=eq.{projectId}");
+    {
+        await _http.SendAsync(Req(HttpMethod.Delete, $"/rest/v1/projects?id=eq.{projectId}"));
+    }
 
     public async Task<Note?> GetNoteByIdAsync(string id)
     {
         var url = $"/rest/v1/notes?select=*,group:groups(*),note_tags(tag:tags(*))&id=eq.{id}&limit=1";
-        var raw = await _http.GetFromJsonAsync<List<JsonElement>>(url) ?? new();
+        var res = await _http.SendAsync(Req(HttpMethod.Get, url));
+        res.EnsureSuccessStatusCode();
+        var raw = await res.Content.ReadFromJsonAsync<List<JsonElement>>() ?? new();
         return raw.Count > 0 ? MapNote(raw[0]) : null;
     }
 
     // ── Public Sharing ───────────────────────────────────────
+
     public string PublicEndpointBase => _supabaseUrl + "/rest/v1/rpc/get_public_group_notes";
+
     public async Task SetGroupPublicAsync(string groupId, bool isPublic)
     {
         var payload = new { is_public = isPublic };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var req = new HttpRequestMessage(HttpMethod.Patch, $"/rest/v1/groups?id=eq.{groupId}") { Content = content };
+        var req = Req(HttpMethod.Patch, $"/rest/v1/groups?id=eq.{groupId}", content);
         req.Headers.Add("Prefer", "return=minimal");
         var res = await _http.SendAsync(req);
         res.EnsureSuccessStatusCode();
+    }
+    // ── Jira ─────────────────────────────────────────────────────────────────────
+
+    public async Task<bool> GetJiraStatusAsync()
+    {
+        try
+        {
+            var response = await _http.GetAsync($"{_jiraProxyBase}/jira/status");
+            var json = await response.Content.ReadAsStringAsync();
+            var doc = JsonDocument.Parse(json).RootElement;
+            return doc.GetProperty("connected").GetBoolean();
+        }
+        catch { return false; }
+    }
+
+    public async Task<List<JiraProject>> GetJiraProjectsAsync()
+    {
+        var response = await _http.GetAsync($"{_jiraProxyBase}/jira/projects");
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json).RootElement;
+
+        var results = new List<JiraProject>();
+        if (doc.TryGetProperty("values", out var values))
+        {
+            foreach (var p in values.EnumerateArray())
+            {
+                results.Add(new JiraProject
+                {
+                    Id = p.GetProperty("id").GetString() ?? "",
+                    Key = p.GetProperty("key").GetString() ?? "",
+                    Name = p.GetProperty("name").GetString() ?? ""
+                });
+            }
+        }
+        return results;
+    }
+
+    public async Task<List<JiraIssueType>> GetJiraIssueTypesAsync(string projectKey)
+    {
+        var response = await _http.GetAsync($"{_jiraProxyBase}/jira/issuetypes/{projectKey}");
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json).RootElement;
+
+        var results = new List<JiraIssueType>();
+        if (doc.TryGetProperty("issueTypes", out var types))
+        {
+            foreach (var t in types.EnumerateArray())
+            {
+                results.Add(new JiraIssueType
+                {
+                    Id = t.GetProperty("id").GetString() ?? "",
+                    Name = t.GetProperty("name").GetString() ?? ""
+                });
+            }
+        }
+        return results;
+    }
+
+    public async Task<string?> CreateJiraIssueAsync(
+        string projectKey,
+        string issueTypeId,
+        string summary,
+        string? description)
+    {
+        var body = new
+        {
+            fields = new
+            {
+                project = new { key = projectKey },
+                issuetype = new { id = issueTypeId },
+                summary = summary,
+                description = description == null ? null : new
+                {
+                    type = "doc",
+                    version = 1,
+                    content = new[]
+                    {
+                    new
+                    {
+                        type    = "paragraph",
+                        content = new[]
+                        {
+                            new { type = "text", text = description }
+                        }
+                    }
+                }
+                }
+            }
+        };
+
+        var response = await _http.PostAsync(
+            $"{_jiraProxyBase}/jira/issue",
+            new StringContent(
+                JsonSerializer.Serialize(body),
+                System.Text.Encoding.UTF8,
+                "application/json"));
+
+        if (!response.IsSuccessStatusCode) return null;
+
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(json).RootElement;
+        return doc.TryGetProperty("key", out var key) ? key.GetString() : null;
     }
 }

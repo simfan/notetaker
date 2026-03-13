@@ -1,3 +1,64 @@
 ﻿@inherits LayoutComponentBase
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
 
-@Body
+<div class="layout-wrapper">
+    <div class="layout-header">
+        <a href="/settings" class="header-icon-btn" title="Settings">⚙️</a>
+        <button class="header-icon-btn" title="Log out" @onclick="HandleLogout">
+            🚪
+        </button>
+    </div>
+    <div class="layout-body">
+        @Body
+    </div>
+</div>
+
+@code {
+    private async Task HandleLogout()
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to log out?");
+        if (!confirmed) return;
+        await Auth.SignOutAsync();
+        Nav.NavigateTo("/login", forceLoad: true);
+    }
+}
+
+<style>
+    .layout-wrapper {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+    }
+
+    .layout-header {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        background: #fff;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .header-icon-btn {
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        padding: 4px 6px;
+        border-radius: 6px;
+        text-decoration: none;
+        line-height: 1;
+        transition: background 0.15s;
+    }
+
+        .header-icon-btn:hover {
+            background: #f1f5f9;
+        }
+
+    .layout-body {
+        flex: 1;
+    }
+</style>

@@ -1,0 +1,377 @@
+﻿@page "/login"
+@using Microsoft.JSInterop
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="login-container">
+    <div class="login-card">
+
+        <!-- Brand -->
+        <div class="login-brand">
+            <span class="login-brand-icon">📋</span>
+            <h1 class="login-brand-name">NoteKeeper</h1>
+            <p class="login-brand-sub">Your personal note hub</p>
+        </div>
+
+        <!-- Mode toggle -->
+        <div class="login-mode-row">
+            <button class="login-mode-btn @(mode == "login" ? "active" : "")"
+                    @onclick='() => SetMode("login")'>
+                Log In
+            </button>
+            <button class="login-mode-btn @(mode == "signup" ? "active" : "")"
+                    @onclick='() => SetMode("signup")'>
+                Sign Up
+            </button>
+        </div>
+
+        <!-- Email + Password -->
+        <input class="login-input"
+               type="email"
+               placeholder="Email"
+               @bind="email"
+               @bind:event="oninput" />
+        <input class="login-input"
+               type="password"
+               placeholder="Password"
+               @bind="password"
+               @bind:event="oninput" />
+
+        <!-- Messages -->
+        @if (!string.IsNullOrEmpty(errorMsg))
+        {
+            <p class="login-error">@errorMsg</p>
+        }
+        @if (!string.IsNullOrEmpty(successMsg))
+        {
+            <p class="login-success">@successMsg</p>
+        }
+
+        <!-- Primary button -->
+        <button class="login-primary-btn" @onclick="HandleEmailAuth" disabled="@loading">
+            @if (loading)
+            {
+                <span>Loading…</span>
+            }
+            else
+            {
+                <span>@(mode == "login" ? "Log In" : "Create Account")</span>
+            }
+        </button>
+
+        <!-- Divider -->
+        <div class="login-divider">
+            <div class="login-divider-line"></div>
+            <span class="login-divider-text">or continue with</span>
+            <div class="login-divider-line"></div>
+        </div>
+
+        <!-- OAuth buttons -->
+        <button class="login-oauth-btn" @onclick='() => HandleOAuth("google")' disabled="@oauthLoading">
+            🔵&nbsp; Continue with Google
+        </button>
+        <button class="login-oauth-btn" @onclick='() => HandleOAuth("github")' disabled="@oauthLoading">
+            ⚫&nbsp; Continue with GitHub
+        </button>
+
+    </div>
+</div>
+
+@code {
+    private string mode = "login";
+    private string email = "";
+    private string password = "";
+    private bool loading = false;
+    private bool oauthLoading = false;
+    private string errorMsg = "";
+    private string successMsg = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // If already logged in, skip to home
+        var restored = await Auth.TryRestoreSessionAsync();
+        if (restored) Nav.NavigateTo("/");
+    }
+
+    private void SetMode(string m)
+    {
+        mode = m;
+        errorMsg = "";
+        successMsg = "";
+    }
+
+    private void ClearMessages()
+    {
+        errorMsg = "";
+        successMsg = "";
+    }
+
+    private async Task HandleEmailAuth()
+    {
+        ClearMessages();
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+        {
+            errorMsg = "Please enter your email and password.";
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            if (mode == "login")
+            {
+                var result = await Auth.SignInWithPasswordAsync(email.Trim(), password);
+                if (result.Success)
+                    Nav.NavigateTo("/");
+                else
+                    errorMsg = result.ErrorMessage ?? "Sign in failed.";
+            }
+            else
+            {
+                var result = await Auth.SignUpAsync(email.Trim(), password);
+                if (!result.Success)
+                {
+                    errorMsg = result.ErrorMessage ?? "Sign up failed.";
+                }
+                else if (result.ErrorMessage == "confirm_email")
+                {
+                    successMsg = "Account created! Check your email to confirm, then log in.";
+                    SetMode("login");
+                }
+                else
+                {
+                    Nav.NavigateTo("/");
+                }
+            }
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    /*private async Task HandleOAuth(string provider)
+    {
+        ClearMessages();
+        oauthLoading = true;
+        try
+        {
+            var url = Auth.GetOAuthUrl(provider);
+            await JS.InvokeVoidAsync("window.open", url, "_self");
+        }
+        finally
+        {
+            oauthLoading = false;
+        }
+    }*/
+    private async Task HandleOAuth(string provider)
+    {
+        ClearMessages();
+        oauthLoading = true;
+        try
+        {
+            var url = Auth.GetOAuthUrl(provider);
+            var dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("window.openOAuthPopup", url, dotNetRef);
+        }
+        catch (Exception ex)
+        {
+            errorMsg = ex.Message;
+            oauthLoading = false;
+        }
+        // oauthLoading cleared in OnOAuthComplete
+    }
+
+    [JSInvokable]
+    public async Task OnOAuthComplete(string? accessToken, string? refreshToken)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(refreshToken))
+            {
+                errorMsg = "Sign in cancelled or failed.";
+                return;
+            }
+            var result = await Auth.HandleOAuthCallbackAsync(accessToken, refreshToken);
+            if (result.Success)
+                Nav.NavigateTo("/");
+            else
+                errorMsg = result.ErrorMessage ?? "Sign in failed.";
+        }
+        finally
+        {
+            oauthLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}
+
+<style>
+    .login-container {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f8fafc;
+        padding: 24px;
+    }
+
+    .login-card {
+        background: #fff;
+        border-radius: 20px;
+        padding: 40px;
+        width: 100%;
+        max-width: 420px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+
+    .login-brand {
+        text-align: center;
+        margin-bottom: 32px;
+    }
+
+    .login-brand-icon {
+        font-size: 48px;
+        display: block;
+        margin-bottom: 8px;
+    }
+
+    .login-brand-name {
+        font-size: 26px;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0 0 4px;
+    }
+
+    .login-brand-sub {
+        font-size: 14px;
+        color: #94a3b8;
+        margin: 0;
+    }
+
+    .login-mode-row {
+        display: flex;
+        background: #e2e8f0;
+        border-radius: 10px;
+        padding: 4px;
+        margin-bottom: 20px;
+    }
+
+    .login-mode-btn {
+        flex: 1;
+        padding: 8px;
+        border: none;
+        background: transparent;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        color: #64748b;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+
+    .login-mode-btn.active {
+        background: #fff;
+        color: #6366f1;
+        font-weight: 700;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    .login-input {
+        width: 100%;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 13px 14px;
+        font-size: 15px;
+        color: #1e293b;
+        margin-bottom: 12px;
+        box-sizing: border-box;
+        outline: none;
+        transition: border-color 0.15s;
+    }
+
+    .login-input:focus {
+        border-color: #6366f1;
+    }
+
+    .login-error {
+        color: #ef4444;
+        font-size: 13px;
+        text-align: center;
+        margin-bottom: 10px;
+    }
+
+    .login-success {
+        color: #10b981;
+        font-size: 13px;
+        text-align: center;
+        margin-bottom: 10px;
+    }
+
+    .login-primary-btn {
+        width: 100%;
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        padding: 14px;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 4px;
+        transition: background 0.15s;
+    }
+
+    .login-primary-btn:hover:not(:disabled) {
+        background: #4f46e5;
+    }
+
+    .login-primary-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .login-divider {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 20px 0;
+    }
+
+    .login-divider-line {
+        flex: 1;
+        height: 1px;
+        background: #e2e8f0;
+    }
+
+    .login-divider-text {
+        font-size: 13px;
+        color: #94a3b8;
+        white-space: nowrap;
+    }
+
+    .login-oauth-btn {
+        width: 100%;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 13px;
+        font-size: 15px;
+        font-weight: 500;
+        color: #1e293b;
+        cursor: pointer;
+        margin-bottom: 10px;
+        transition: background 0.15s;
+    }
+
+    .login-oauth-btn:hover:not(:disabled) {
+        background: #f8fafc;
+    }
+
+    .login-oauth-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+</style>

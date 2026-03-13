@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="JiraProxy/JiraProxy.csproj" Id="1534126f-8ada-4183-96eb-1f31eda3ec63" />
   <Project Path="NoteManager/NoteManager.csproj" />
 </Solution>
